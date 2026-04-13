@@ -1,5 +1,28 @@
 "use strict";
 
+function resolvePreparedPrompt(preparedMessages) {
+    const systemPrompt = normalizePrompt(preparedMessages?.systemPrompt);
+    if (systemPrompt) {
+        return {
+            source: "messages.system_or_developer",
+            value: systemPrompt,
+        };
+    }
+
+    const assistantPrompt = normalizePrompt(preparedMessages?.assistantPrompt);
+    if (assistantPrompt) {
+        return {
+            source: "messages.leading_assistant",
+            value: assistantPrompt,
+        };
+    }
+
+    return {
+        source: "messages.system_or_developer",
+        value: "",
+    };
+}
+
 function resolveSessionPrompt(body, preparedMessages) {
     const directCandidates = [
         {
@@ -34,10 +57,7 @@ function resolveSessionPrompt(body, preparedMessages) {
         }
     }
 
-    return {
-        source: "messages.system_or_developer",
-        value: normalizePrompt(preparedMessages?.systemPrompt),
-    };
+    return resolvePreparedPrompt(preparedMessages);
 }
 
 function normalizePrompt(value) {
@@ -51,4 +71,5 @@ function normalizePrompt(value) {
 
 module.exports = {
     resolveSessionPrompt,
+    resolvePreparedPrompt,
 };

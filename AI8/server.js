@@ -8,6 +8,7 @@ const express = require("express");
 
 const packageJson = require("./package.json");
 const AI8Client = require("./lib/ai8-client");
+const { splitPreparedMessages } = require("./lib/message-layout");
 const RuntimeConfigStore = require("./lib/runtime-config");
 const RuntimeLogger = require("./lib/runtime-logger");
 const { resolveSessionPrompt } = require("./lib/request-prompt");
@@ -509,13 +510,11 @@ async function prepareMessages(messages, reuseSession, options = {}) {
     const normalized = (await Promise.all(messages.map((message, index) => normalizeMessage(message, index, options)))).filter(
         hasMessagePayload
     );
-    const systemPrompt = normalized
-        .filter(message => message.role === "system" || message.role === "developer")
-        .map(message => renderMessageText(message))
-        .join("\n\n")
-        .trim();
-
-    const conversation = normalized.filter(message => !["system", "developer"].includes(message.role));
+    const {
+        assistantPrompt,
+        conversation,
+        systemPrompt,
+    } = splitPreparedMessages(normalized, renderMessageText);
     if (conversation.length === 0) {
         throw createHttpError(400, "At least one non-system message is required.");
     }
@@ -528,6 +527,7 @@ async function prepareMessages(messages, reuseSession, options = {}) {
     const currentUserText = buildCurrentUserPrompt(lastUserMessage);
     if (reuseSession) {
         return {
+            assistantPrompt,
             files: lastUserMessage.files,
             systemPrompt,
             text: options.injectSystemPromptOnReuse ? mergeSystemPromptIntoText(systemPrompt, currentUserText) : currentUserText,
@@ -536,6 +536,7 @@ async function prepareMessages(messages, reuseSession, options = {}) {
 
     if (conversation.length === 1 && conversation[0].role === "user") {
         return {
+            assistantPrompt,
             files: conversation[0].files,
             systemPrompt,
             text: buildCurrentUserPrompt(conversation[0]),
@@ -547,6 +548,7 @@ async function prepareMessages(messages, reuseSession, options = {}) {
         .join("\n\n");
 
     return {
+        assistantPrompt,
         files: lastUserMessage.files,
         systemPrompt,
         text: [

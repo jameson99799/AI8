@@ -3,7 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { resolveSessionPrompt } = require("../lib/request-prompt");
+const { resolvePreparedPrompt, resolveSessionPrompt } = require("../lib/request-prompt");
 
 test("resolveSessionPrompt prefers explicit ai8 session prompt from metadata", () => {
     const prompt = resolveSessionPrompt(
@@ -58,4 +58,14 @@ test("resolveSessionPrompt falls back to prepared system prompt", () => {
 
     assert.equal(prompt.value, "system value");
     assert.equal(prompt.source, "messages.system_or_developer");
+});
+
+test("resolvePreparedPrompt falls back to leading assistant preset when system prompt is empty", () => {
+    const prompt = resolvePreparedPrompt({
+        assistantPrompt: "assistant preset",
+        systemPrompt: "",
+    });
+
+    assert.equal(prompt.value, "assistant preset");
+    assert.equal(prompt.source, "messages.leading_assistant");
 });
