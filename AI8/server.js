@@ -248,12 +248,18 @@ app.post("/v1/chat/completions", asyncHandler(async (req, res) => {
     const thinking = resolveThinking(req, body, config.ai8DefaultThinking);
 
     const isEphemeralSession = true;
-    const session = await client.createSession({
+    let session = await client.createSession({
         maxToken: body.max_tokens,
         model: resolvedModel.value,
         prompt: sessionPrompt.value,
         temperature: body.temperature,
     });
+
+    if (sessionPrompt.value) {
+        session = await client.updateSession(session, {
+            prompt: sessionPrompt.value,
+        });
+    }
 
     res.setHeader("x-ai8-session-id", String(session.id));
     res.setHeader("x-ai8-session-prompt-source", String(sessionPrompt.source || "none"));

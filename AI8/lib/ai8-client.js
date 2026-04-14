@@ -137,6 +137,57 @@ class AI8Client {
         });
     }
 
+    buildSessionUpdatePayload(session, patch = {}) {
+        return {
+            contextCount: Number.isFinite(Number(patch.contextCount ?? session?.contextCount))
+                ? Number(patch.contextCount ?? session?.contextCount)
+                : 0,
+            created: session?.created || "",
+            frequencyPenalty: Number.isFinite(Number(patch.frequencyPenalty ?? session?.frequencyPenalty))
+                ? Number(patch.frequencyPenalty ?? session?.frequencyPenalty)
+                : 0,
+            icon: patch.icon ?? session?.icon ?? "",
+            id: Number(session?.id),
+            localPlugins: patch.localPlugins ?? session?.localPlugins ?? null,
+            maxToken: Number.isFinite(Number(patch.maxToken ?? session?.maxToken))
+                ? Number(patch.maxToken ?? session?.maxToken)
+                : 0,
+            mcp: Array.isArray(patch.mcp) ? patch.mcp : Array.isArray(session?.mcp) ? session.mcp : [],
+            model: String(patch.model ?? session?.model ?? "").trim(),
+            name: String(patch.name ?? session?.name ?? "").trim(),
+            plugins: patch.plugins ?? session?.plugins ?? null,
+            presencePenalty: Number.isFinite(Number(patch.presencePenalty ?? session?.presencePenalty))
+                ? Number(patch.presencePenalty ?? session?.presencePenalty)
+                : 0,
+            prompt: String(patch.prompt ?? session?.prompt ?? "").trim(),
+            rags: Array.isArray(patch.rags) ? patch.rags : Array.isArray(session?.rags) ? session.rags : [],
+            temperature: Number.isFinite(Number(patch.temperature ?? session?.temperature))
+                ? Number(patch.temperature ?? session?.temperature)
+                : 0.7,
+            topSort: Number.isFinite(Number(patch.topSort ?? session?.topSort))
+                ? Number(patch.topSort ?? session?.topSort)
+                : 0,
+            uid: Number(session?.uid),
+            updated: session?.updated || "",
+            useAppId: Number.isFinite(Number(patch.useAppId ?? session?.useAppId))
+                ? Number(patch.useAppId ?? session?.useAppId)
+                : 0,
+        };
+    }
+
+    async updateSession(session, patch = {}) {
+        const sessionId = Number(session?.id);
+        if (!Number.isFinite(sessionId)) {
+            throw this._buildError("AI8 session id must be numeric.", 400);
+        }
+
+        const payload = this.buildSessionUpdatePayload(session, patch);
+        return this.requestJson(`/chat/session/${sessionId}`, {
+            body: payload,
+            method: "PUT",
+        });
+    }
+
     async streamChatCompletion(options = {}, handlers = {}) {
         const payload = {
             files: Array.isArray(options.files)

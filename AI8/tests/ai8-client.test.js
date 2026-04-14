@@ -52,3 +52,38 @@ test("generic AI8 business errors on HTTP 200 are normalized to 502 and keep ups
         msg: "生成失败",
     });
 });
+
+test("buildSessionUpdatePayload merges returned session with prompt patch", () => {
+    const client = createClient();
+    const payload = client.buildSessionUpdatePayload(
+        {
+            contextCount: 8,
+            created: "2026-04-14 10:36:58",
+            frequencyPenalty: 0,
+            icon: "",
+            id: 519673,
+            localPlugins: null,
+            maxToken: 0,
+            mcp: [],
+            model: "openai_chat::gpt-5.1",
+            name: "新对话",
+            plugins: null,
+            presencePenalty: 0,
+            prompt: "",
+            rags: [],
+            temperature: 0.7,
+            topSort: 0,
+            uid: 2491,
+            updated: "2026-04-14 10:36:58",
+            useAppId: 0,
+        },
+        {
+            prompt: "assistant preset",
+        }
+    );
+
+    assert.equal(payload.id, 519673);
+    assert.equal(payload.prompt, "assistant preset");
+    assert.equal(payload.model, "openai_chat::gpt-5.1");
+    assert.equal(payload.contextCount, 8);
+});
