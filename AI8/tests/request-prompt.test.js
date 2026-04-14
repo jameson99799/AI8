@@ -48,6 +48,40 @@ test("resolveSessionPrompt supports top-level instructions and prompt fields", (
     );
 });
 
+test("resolveSessionPrompt extracts embedded role prompt from wrapped instructions", () => {
+    const prompt = resolveSessionPrompt(
+        {
+            instructions: [
+                "In this environment you have access to a set of tools you can use to answer the user's question.",
+                "",
+                "# User Instructions",
+                "# Role: Senior Steel Export Translation Expert v11.0",
+                "",
+                "## Core Identity:",
+                "You are a top-tier Foreign Trade Translator.",
+                "",
+                "You are now activated. Await my input.",
+            ].join("\n"),
+        },
+        {
+            systemPrompt: "",
+        }
+    );
+
+    assert.equal(prompt.source, "instructions");
+    assert.equal(
+        prompt.value,
+        [
+            "# Role: Senior Steel Export Translation Expert v11.0",
+            "",
+            "## Core Identity:",
+            "You are a top-tier Foreign Trade Translator.",
+            "",
+            "You are now activated. Await my input.",
+        ].join("\n")
+    );
+});
+
 test("resolveSessionPrompt falls back to prepared system prompt", () => {
     const prompt = resolveSessionPrompt(
         {},

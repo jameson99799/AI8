@@ -65,8 +65,29 @@ function normalizePrompt(value) {
         return "";
     }
 
-    const text = value.trim();
+    const text = extractEmbeddedRolePrompt(value.trim());
     return text || "";
+}
+
+function extractEmbeddedRolePrompt(text) {
+    if (!text) {
+        return "";
+    }
+
+    const normalizedText = text.replace(/\r\n/g, "\n");
+    const activationMarker = "You are now activated. Await my input.";
+    const activationIndex = normalizedText.lastIndexOf(activationMarker);
+    const roleIndex = normalizedText.lastIndexOf("# Role:");
+
+    if (roleIndex === -1) {
+        return normalizedText.trim();
+    }
+
+    if (activationIndex !== -1 && roleIndex < activationIndex) {
+        return normalizedText.slice(roleIndex, activationIndex + activationMarker.length).trim();
+    }
+
+    return normalizedText.slice(roleIndex).trim();
 }
 
 module.exports = {
