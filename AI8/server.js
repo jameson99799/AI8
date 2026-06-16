@@ -12,10 +12,10 @@ const { splitPreparedMessages } = require("./lib/message-layout");
 const RuntimeConfigStore = require("./lib/runtime-config");
 const RuntimeLogger = require("./lib/runtime-logger");
 const { resolveSessionPrompt } = require("./lib/request-prompt");
-const {
     contentPartToAi8File,
     extractAi8Images,
     isProbablyImageFile,
+    normalizeAi8FileInput,
 } = require("./lib/media-utils");
 const {
     buildAdminModelsList,
