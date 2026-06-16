@@ -108,10 +108,13 @@ function buildImageGeneration({ created, images = [] }) {
     return {
         created: created || Math.floor(Date.now() / 1000),
         data: images.map(img => {
+            const dataObj = { url: img.original_url || img.url };
             if (img.url && img.url.startsWith("data:")) {
-                return { b64_json: img.url.split(",")[1] };
+                dataObj.b64_json = img.url.split(",")[1];
+                // Still provide original URL if it was an HTTP URL fetched to base64
+                if (!img.original_url) dataObj.url = img.url; 
             }
-            return { url: img.url };
+            return dataObj;
         }),
     };
 }

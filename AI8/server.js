@@ -395,7 +395,8 @@ app.post("/v1/images/generations", asyncHandler(async (req, res) => {
     );
 
     const finalContent = resolveFinalContent(finalRecord || streamResult?.record, content);
-    const images = extractAi8Images(finalContent);
+    let images = extractAi8Images(finalContent);
+    images = await resolveImagesToBase64(images);
 
     res.json(buildImageGeneration({ created, images }));
 
@@ -482,7 +483,8 @@ app.post("/v1/images/edits", asyncHandler(async (req, res) => {
     );
 
     const finalContent = resolveFinalContent(finalRecord || streamResult?.record, content);
-    const images = extractAi8Images(finalContent);
+    let images = extractAi8Images(finalContent);
+    images = await resolveImagesToBase64(images);
 
     res.json(buildImageGeneration({ created, images }));
 
@@ -1436,6 +1438,35 @@ async function simpleMultipartParser(req) {
         });
         req.on("error", reject);
     });
+}
+
+/**
+ * Ensure image endpoints always provide a base64 version if clients require it.
+ */
+async function resolveImagesToBase64(images) {
+    const resolved = [];
+    for (const img of images) {
+        if (img.url && img.url.startsWith("http")) {
+            try {
+                const response = await fetch(img.url);
+                if (response.ok) {
+                    const buffer = Buffer.from(await response.arrayBuffer());
+                    const b64 = buffer.toString("base64");
+                    const mime = response.headers.get("content-type") || "image/png";
+                    resolved.push({
+                        ...img,
+                        url: `data:${mime};base64,${b64}`,
+                        original_url: img.url
+                    });
+                    continue;
+                }
+            } catch (err) {
+                logger.warn("Failed to fetch generated image to base64", { error: err.message, url: img.url });
+            }
+        }
+        resolved.push(img);
+    }
+    return resolved;
 }
 
 function registerProcessLogging() {
