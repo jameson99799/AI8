@@ -155,7 +155,7 @@
                 <header class="section-header flex-between">
                     <div>
                         <h2>聚合模型</h2>
-                        <p>所有启用的渠道模型池，包含渠道的后缀区隔标志。</p>
+                        <p>所有启用的渠道模型池，包含渠道的后缀区隔标志。勾选 = 加入全局黑名单，取消勾选 = 自动移出，均可即时生效。</p>
                     </div>
                     <div style="display:flex; gap:10px;">
                         <button id="refreshModelsButton" class="primary-button">强刷获取模型</button>
@@ -163,34 +163,18 @@
                     </div>
                 </header>
                 <div id="blacklistPanel" class="blacklist-panel" style="display:none; margin-bottom: 1rem;">
-                    <div class="glass-panel blacklist-transfer">
-                        <div class="blacklist-col">
-                            <div class="blacklist-col-header">
-                                <h3>可拉取模型池</h3>
-                                <div class="flex-between" style="gap:8px; align-items:center;">
-                                    <input type="search" id="blPoolSearch" placeholder="模糊搜索模型名称..." style="flex:1;" oninput="filterBlacklistPool()">
-                                    <button type="button" class="ghost-button" onclick="selectAllBlacklistPool()">全选</button>
-                                    <button type="button" class="ghost-button" onclick="deselectAllBlacklistPool()">清空</button>
-                                </div>
-                            </div>
-                            <div id="blacklistPoolList" class="model-checklist" style="max-height: 340px; overflow-y:auto; display:flex; flex-direction:column; gap:6px;"></div>
-                            <div class="blacklist-actions">
-                                <button type="button" class="primary-button" style="width:100%;" onclick="addModelsToBlacklist()">➡️ 将选中模型加入黑名单</button>
+                    <div class="glass-panel blacklist-col">
+                        <div class="blacklist-col-header">
+                            <h3>黑名单模型（在下方聚合模型中勾选 = 加入黑名单，取消勾选 = 自动移出）</h3>
+                            <div class="flex-between" style="gap:8px; align-items:center;">
+                                <input type="search" id="blListSearch" placeholder="模糊搜索黑名单模型..." style="flex:1;" oninput="filterBlacklistList()">
+                                <button type="button" class="ghost-button" onclick="selectAllBlacklistList()">全选</button>
+                                <button type="button" class="ghost-button" onclick="deselectAllBlacklistList()">清空</button>
                             </div>
                         </div>
-                        <div class="blacklist-col">
-                            <div class="blacklist-col-header">
-                                <h3>黑名单模型</h3>
-                                <div class="flex-between" style="gap:8px; align-items:center;">
-                                    <input type="search" id="blListSearch" placeholder="模糊搜索模型名称..." style="flex:1;" oninput="filterBlacklistList()">
-                                    <button type="button" class="ghost-button" onclick="selectAllBlacklistList()">全选</button>
-                                    <button type="button" class="ghost-button" onclick="deselectAllBlacklistList()">清空</button>
-                                </div>
-                            </div>
-                            <div id="blacklistModelsList" class="model-checklist" style="max-height: 340px; overflow-y:auto; display:flex; flex-direction:column; gap:6px;"></div>
-                            <div class="blacklist-actions">
-                                <button type="button" class="danger-button" style="width:100%;" onclick="removeModelsFromBlacklist()">⬅️ 移除选中的黑名单模型</button>
-                            </div>
+                        <div id="blacklistModelsList" class="model-checklist" style="max-height: 340px; overflow-y:auto; display:flex; flex-direction:column; gap:6px;"></div>
+                        <div class="blacklist-actions">
+                            <button type="button" class="danger-button" style="width:100%;" onclick="removeModelsFromBlacklist()">⬅️ 移除选中的黑名单模型</button>
                         </div>
                     </div>
                 </div>
@@ -198,9 +182,8 @@
                     <div id="modelsMeta" class="muted pb-4">加载中...</div>
                     <div class="flex-between" style="gap:8px; align-items:center; margin-bottom:8px;">
                         <input type="search" id="globalModelSearch" placeholder="模糊搜索聚合模型名称..." style="flex:1;" oninput="filterGlobalModels()">
-                        <button type="button" class="ghost-button" onclick="selectAllGlobalModels()">全选</button>
-                        <button type="button" class="ghost-button" onclick="deselectAllGlobalModels()">清空</button>
-                        <button type="button" class="primary-button" onclick="addSelectedGlobalToBlacklist()">➡️ 将选中模型加入黑名单</button>
+                        <button type="button" class="ghost-button" title="将当前显示的模型全部加入黑名单" onclick="selectAllGlobalModels()">全选</button>
+                        <button type="button" class="ghost-button" title="将当前显示的模型全部移出黑名单" onclick="deselectAllGlobalModels()">清空</button>
                     </div>
                     <div id="modelsList" class="model-checklist" style="max-height: 60vh; overflow-y:auto; display:flex; flex-direction:column; gap:6px;"></div>
                 </div>
@@ -314,6 +297,6 @@
         </div>
     </div>
     
-    <script src="./app.js?v=5"></script>
+    <script src="./app.js?v=6"></script>
 </body>
 </html>

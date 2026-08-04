@@ -534,7 +534,8 @@ async function fetchModels(forceRefresh) {
 }
 
 function renderGlobalModels(models) {
-    elements.modelsMeta.textContent = `系统共动态拦截提取了 ${models.length} 个模型支持。勾选后可将模型直接加入全局黑名单。`;
+    const blacklist = getGlobalBlacklist();
+    elements.modelsMeta.textContent = `系统共动态拦截提取了 ${models.length} 个模型支持。勾选 = 加入全局黑名单（即时保存），取消勾选 = 自动移出黑名单。`;
     const listEl = elements.modelsList;
     listEl.innerHTML = "";
     if (!models.length) {
@@ -545,13 +546,14 @@ function renderGlobalModels(models) {
         const v = String(model.value || model.origId || "").trim();
         if (!v) return;
         const provider = escapeHtml(model?.attr?.providerName || model.channel || "ai8");
+        const checked = blacklist.includes(v) ? "checked" : "";
         const row = document.createElement("label");
         row.className = "checklist-item flex-between";
         row.dataset.searchTarget = v.toLowerCase();
         const display = model.display_value || v;
         row.innerHTML = `
             <div style="display:flex; gap:8px; align-items:center; min-width:0;">
-                <input type="checkbox" class="global-model-checkbox" value="${escapeHtml(v)}">
+                <input type="checkbox" class="global-model-checkbox" value="${escapeHtml(v)}" ${checked} onchange="toggleGlobalBlacklistModel(this)">
                 <span class="checklist-name">${escapeHtml(display)}</span>
                 <small style="opacity:0.7; flex-shrink:0;">[${provider}]</small>
             </div>
@@ -559,6 +561,16 @@ function renderGlobalModels(models) {
         listEl.appendChild(row);
     });
     filterGlobalModels();
+}
+
+window.toggleGlobalBlacklistModel = async function(cb) {
+    const v = cb.value;
+    const current = getGlobalBlacklist();
+    if (cb.checked) {
+        if (!current.includes(v)) await saveGlobalBlacklist([...current, v], { silent: true });
+    } else {
+        if (current.includes(v)) await saveGlobalBlacklist(current.filter(x => x !== v), { silent: true });
+    }
 }
 
 // ----- Global Blacklist Management -----
@@ -576,30 +588,6 @@ function visibleBlacklistCheckboxes(containerId, cbClass) {
 
 function renderBlacklistPanels() {
     const blacklist = getGlobalBlacklist();
-    const pool = state.models.filter(m => {
-        const v = String(m.value || m.origId || "").trim();
-        return v && !blacklist.includes(v);
-    });
-    const poolList = document.getElementById('blacklistPoolList');
-    poolList.innerHTML = "";
-    if (pool.length === 0) {
-        poolList.innerHTML = "<div class='muted'>模型池为空（或全部已进黑名单）。</div>";
-    } else {
-        pool.forEach(m => {
-            const v = String(m.value || m.origId || "").trim();
-            const row = document.createElement("label");
-            row.className = "checklist-item flex-between";
-            row.dataset.searchTarget = v.toLowerCase();
-            row.innerHTML = `
-                <div style="display:flex; gap:8px; align-items:center; min-width:0;">
-                    <input type="checkbox" class="bl-pool-checkbox" value="${escapeHtml(v)}">
-                    <span class="checklist-name">${escapeHtml(m.display_value || v)}</span>
-                </div>
-            `;
-            poolList.appendChild(row);
-        });
-    }
-
     const bl = document.getElementById('blacklistModelsList');
     bl.innerHTML = "";
     if (blacklist.length === 0) {
@@ -619,7 +607,6 @@ function renderBlacklistPanels() {
             bl.appendChild(row);
         });
     }
-    filterBlacklistPool();
     filterBlacklistList();
 }
 
@@ -631,12 +618,6 @@ window.toggleBlacklistPanel = function() {
     panel.style.display = showing ? 'none' : 'block';
     if (btn) btn.classList.toggle('active', !showing);
     if (!showing) renderBlacklistPanels();
-}
-
-window.filterBlacklistPool = function() {
-    const term = document.getElementById('blPoolSearch').value.toLowerCase().trim();
-    const items = document.querySelectorAll('#blacklistPoolList .checklist-item');
-    items.forEach(item => { item.style.display = (!term || (item.dataset.searchTarget || '').includes(term)) ? "flex" : "none"; });
 }
 
 window.filterBlacklistList = function() {
@@ -651,31 +632,34 @@ window.filterGlobalModels = function() {
     items.forEach(item => { item.style.display = (!term || (item.dataset.searchTarget || '').includes(term)) ? "flex" : "none"; });
 }
 
-window.selectAllGlobalModels = function() {
-    visibleBlacklistCheckboxes('modelsList', '.global-model-checkbox').forEach(cb => cb.checked = true);
-}
-
-window.deselectAllGlobalModels = function() {
-    visibleBlacklistCheckboxes('modelsList', '.global-model-checkbox').forEach(cb => cb.checked = false);
-}
-
-window.addSelectedGlobalToBlacklist = async function() {
-    const selected = Array.from(document.querySelectorAll('#modelsList .global-model-checkbox:checked')).map(cb => cb.value);
-    if (selected.length === 0) {
-        alert("请先在聚合模型中勾选要加入黑名单的模型。");
+window.selectAllGlobalModels = async function() {
+    const visible = visibleBlacklistCheckboxes('modelsList', '.global-model-checkbox');
+    if (!visible.length) {
+        alert("当前没有可勾选的模型。");
         return;
     }
-    const merged = Array.from(new Set([...getGlobalBlacklist(), ...selected]));
+    const current = getGlobalBlacklist();
+    const merged = Array.from(new Set([...current, ...visible.map(cb => cb.value)]));
+    if (merged.length === current.length) {
+        alert("当前显示的模型都已在黑名单中。");
+        return;
+    }
     await saveGlobalBlacklist(merged);
-    renderGlobalModels(state.models);
 }
 
-window.selectAllBlacklistPool = function() {
-    visibleBlacklistCheckboxes('blacklistPoolList', '.bl-pool-checkbox').forEach(cb => cb.checked = true);
-}
-
-window.deselectAllBlacklistPool = function() {
-    visibleBlacklistCheckboxes('blacklistPoolList', '.bl-pool-checkbox').forEach(cb => cb.checked = false);
+window.deselectAllGlobalModels = async function() {
+    const visible = visibleBlacklistCheckboxes('modelsList', '.global-model-checkbox').map(cb => cb.value);
+    if (!visible.length) {
+        alert("当前没有可取消勾选的模型。");
+        return;
+    }
+    const current = getGlobalBlacklist();
+    const remaining = current.filter(v => !visible.includes(v));
+    if (remaining.length === current.length) {
+        alert("当前显示的模型都不在黑名单中。");
+        return;
+    }
+    await saveGlobalBlacklist(remaining);
 }
 
 window.selectAllBlacklistList = function() {
@@ -686,7 +670,7 @@ window.deselectAllBlacklistList = function() {
     visibleBlacklistCheckboxes('blacklistModelsList', '.bl-list-checkbox').forEach(cb => cb.checked = false);
 }
 
-async function saveGlobalBlacklist(list) {
+async function saveGlobalBlacklist(list, opts) {
     try {
         const response = await requestJson("/admin/api/config", {
             method: "PUT",
@@ -695,26 +679,18 @@ async function saveGlobalBlacklist(list) {
         });
         state.config = response.config || state.config;
         renderBlacklistPanels();
-        alert("黑名单已保存，当前共 " + list.length + " 个模型。");
+        renderGlobalModels(state.models);
+        if (!(opts && opts.silent)) alert("黑名单已保存，当前共 " + list.length + " 个模型。");
     } catch (e) {
-        alert("保存黑名单失败: " + e.message);
+        renderGlobalModels(state.models);
+        if (!(opts && opts.silent)) alert("保存黑名单失败: " + e.message);
     }
-}
-
-window.addModelsToBlacklist = async function() {
-    const selected = Array.from(document.querySelectorAll('#blacklistPoolList .bl-pool-checkbox:checked')).map(cb => cb.value);
-    if (selected.length === 0) {
-        alert("请先在左侧勾选要加入黑名单的模型。");
-        return;
-    }
-    const merged = Array.from(new Set([...getGlobalBlacklist(), ...selected]));
-    await saveGlobalBlacklist(merged);
 }
 
 window.removeModelsFromBlacklist = async function() {
     const selected = Array.from(document.querySelectorAll('#blacklistModelsList .bl-list-checkbox:checked')).map(cb => cb.value);
     if (selected.length === 0) {
-        alert("请先在右侧勾选要移出黑名单的模型。");
+        alert("请先在上方勾选要移出黑名单的模型。");
         return;
     }
     await saveGlobalBlacklist(getGlobalBlacklist().filter(v => !selected.includes(v)));
