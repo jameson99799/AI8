@@ -332,6 +332,33 @@ function renderChannelsList() {
         </div>
     `;
     elements.channelsList.insertAdjacentHTML('beforeend', ai8ChannelHTML);
+
+    // Virtual Channel for Native gpt-all Backend
+    const gptallEnabled = state.config.gptallEnabled === true;
+    const gptallChannelHTML = `
+        <div class="channel-row">
+            <div class="channel-row-header" onclick="toggleAccordion(this)">
+                <div class="channel-info-short">
+                    <div class="channel-icon">🚀</div>
+                    <div class="stack" style="gap:2px;">
+                        <div class="channel-title">gpt-all 独立渠道 (原生 gpt-all)</div>
+                        <div class="channel-badge">独立原生接口</div>
+                    </div>
+                </div>
+                <div class="channel-status ${gptallEnabled ? 'active' : ''}" onclick="toggleGptAll(event, this)"></div>
+            </div>
+            <div class="channel-body">
+                <div class="channel-detail-grid">
+                    <div><strong>API 地址:</strong> ${escapeHtml(state.config.gptallBaseUrl || "-")}</div>
+                    <div><strong>API 凭证:</strong> <span style="filter: blur(4px); cursor:pointer;" onclick="this.style.filter='none'">${escapeHtml(state.config.gptallAuthToken || "未配置")}</span></div>
+                </div>
+                <div class="channel-actions flex-between" style="gap:10px;">
+                    <button class="ghost-button" style="flex:1" onclick="openChannelModelsModal('gptall')" type="button">管理查看内置模型</button>
+                </div>
+            </div>
+        </div>
+    `;
+    elements.channelsList.insertAdjacentHTML('beforeend', gptallChannelHTML);
     
     // Custom Channels
     state.channels.forEach((ch, index) => {
@@ -448,6 +475,26 @@ window.toggleAi8 = async function(event, el) {
     }
 }
 
+window.toggleGptAll = async function(event, el) {
+    event.stopPropagation();
+    const isEnabled = state.config.gptallEnabled === true;
+    const newEnabled = !isEnabled;
+    if(newEnabled) el.classList.add('active');
+    else el.classList.remove('active');
+
+    try {
+        const response = await requestJson("/admin/api/config", {
+            body: JSON.stringify({ gptallEnabled: newEnabled }),
+            headers: { "Content-Type": "application/json" },
+            method: "PUT",
+        });
+        state.config = response.config || state.config;
+        fetchModels(true);
+    } catch (e) {
+        alert("保存 gpt-all 状态配置失败:" + e.message);
+    }
+}
+
 async function updateChannelsAPI(channels) {
     try {
         const res = await requestJson("/admin/api/channels", {
@@ -489,13 +536,15 @@ function renderGlobalModels(models) {
 }
 
 window.openChannelModelsModal = function(sourceId) {
-    const ch = sourceId === 'ai8' ? null : state.channels[sourceId];
+    const isGptAll = sourceId === 'gptall';
+    const ch = (sourceId === 'ai8' || isGptAll) ? null : state.channels[sourceId];
     const filteredModels = state.models.filter(m => {
         if (sourceId === 'ai8') return m.channel === 'ai8' || (m.attr && m.attr.providerName === 'ai8') || (m.channel === undefined);
+        if (isGptAll) return m._source === 'gptall' || m.channel === 'gpt-all' || (m.attr && m.attr.providerName === 'gpt-all');
         return m.channel === ch.name || (m.attr && m.attr.providerName === ch.name);
     });
     
-    let sourceName = sourceId === 'ai8' ? '原生 AI8' : ch.name;
+    let sourceName = sourceId === 'ai8' ? '原生 AI8' : (isGptAll ? '原生 gpt-all' : ch.name);
     document.getElementById('modelsModalTitle').textContent = `[${escapeHtml(sourceName)}] 专属模型池`;
     
     // Store sourceId globally to use it in Save button
@@ -509,7 +558,9 @@ window.openChannelModelsModal = function(sourceId) {
     } else {
         const whitelist = sourceId === 'ai8' 
             ? (Array.isArray(state.config.ai8AllowedModels) ? state.config.ai8AllowedModels : [])
-            : (ch && Array.isArray(ch.models) ? ch.models : []);
+            : (isGptAll
+                ? String(state.config.gptallAllowedModels || "").split(",").map(s => s.trim()).filter(Boolean)
+                : (ch && Array.isArray(ch.models) ? ch.models : []));
             
         filteredModels.forEach(m => {
             const v = m.origId || m.value; // Display actual origId without suffix for clarity in selection
@@ -569,6 +620,13 @@ document.getElementById('btnSaveChannelModels').addEventListener('click', async 
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ ai8AllowedModels: selectedModels.join(",") })
+            });
+            state.config = response.config || state.config;
+        } else if (sourceId === 'gptall') {
+            const response = await requestJson("/admin/api/config", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ gptallAllowedModels: selectedModels.join(",") })
             });
             state.config = response.config || state.config;
         } else {
