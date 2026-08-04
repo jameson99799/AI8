@@ -598,9 +598,10 @@ function renderBlacklistPanels() {
 window.toggleBlacklistPanel = function() {
     const panel = document.getElementById('blacklistPanel');
     const btn = document.getElementById('blacklistToggleButton');
+    if (!panel) { console.error("blacklistPanel element not found"); return; }
     const showing = panel.style.display !== 'none';
     panel.style.display = showing ? 'none' : 'block';
-    btn.classList.toggle('active', !showing);
+    if (btn) btn.classList.toggle('active', !showing);
     if (!showing) renderBlacklistPanels();
 }
 
