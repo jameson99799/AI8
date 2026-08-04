@@ -8,6 +8,14 @@ const state = {
 
 const DEFAULT_ADMIN_TOKEN = "ai8-admin-local";
 
+// Build version tag (from app.js?v=N query or default)
+const buildVersionTag = document.getElementById('buildVersionTag');
+if (buildVersionTag) {
+    const src = (document.currentScript && document.currentScript.src) || "";
+    const m = src.match(/[?&]v=(\d+)/);
+    buildVersionTag.textContent = "BUILD v" + (m ? m[1] : "?");
+}
+
 // DOM Elements
 const elements = {
     loginOverlay: document.getElementById("loginOverlay"),
@@ -677,14 +685,16 @@ function getChannelFilteredModels(sourceId, isGptAll) {
 }
 
 function getChannelSelection(sourceId, isGptAll, mode) {
+    const parseList = (raw) => {
+        if (Array.isArray(raw)) return raw.map(s => String(s).trim()).filter(Boolean);
+        return String(raw || "").split(",").map(s => s.trim()).filter(Boolean);
+    };
     if (sourceId === 'ai8') {
-        return mode === 'blacklist'
-            ? (Array.isArray(state.config.ai8BlacklistedModels) ? state.config.ai8BlacklistedModels : [])
-            : (Array.isArray(state.config.ai8AllowedModels) ? state.config.ai8AllowedModels : []);
+        return parseList(mode === 'blacklist' ? state.config.ai8BlacklistedModels : state.config.ai8AllowedModels);
     }
     if (isGptAll) {
         const raw = mode === 'blacklist' ? state.config.gptallBlacklistedModels : state.config.gptallAllowedModels;
-        return String(raw || "").split(",").map(s => s.trim()).filter(Boolean);
+        return parseList(raw);
     }
     const ch = state.channels[sourceId];
     if (mode === 'blacklist') {
@@ -786,6 +796,7 @@ document.getElementById('btnSaveChannelModels').addEventListener('click', async 
     const sourceId = document.getElementById('modelsModal').dataset.activeSourceId;
     const checkboxes = document.querySelectorAll('#channelModelsList .channel-model-checkbox:checked');
     const selectedModels = Array.from(checkboxes).map(cb => cb.value);
+    const isGptAll = sourceId === 'gptall';
     
     try {
         const btn = document.getElementById('btnSaveChannelModels');
@@ -823,6 +834,10 @@ document.getElementById('btnSaveChannelModels').addEventListener('click', async 
             state.channels = updated;
         }
         
+        if (mode === 'blacklist') {
+            await syncChannelBlacklistToGlobal(sourceId, isGptAll, selectedModels);
+        }
+        
         btn.textContent = "同步完成！";
         setTimeout(() => {
             btn.textContent = oldText;
@@ -833,6 +848,25 @@ document.getElementById('btnSaveChannelModels').addEventListener('click', async 
         alert("保存可用模型池失败: " + e.message);
     }
 });
+
+async function syncChannelBlacklistToGlobal(sourceId, isGptAll, selectedOrigIds) {
+    const channelModels = getChannelFilteredModels(sourceId, isGptAll);
+    const channelFullIds = new Set(channelModels.map(m => m.value || m.origId));
+    const selectedFullIds = new Set(
+        selectedOrigIds.map(orig => {
+            const m = channelModels.find(x => (x.origId || x.value) === orig);
+            return m ? (m.value || m.origId) : orig;
+        })
+    );
+    const next = getGlobalBlacklist().filter(id => !channelFullIds.has(id));
+    selectedFullIds.forEach(id => { if (!next.includes(id)) next.push(id); });
+    const response = await requestJson("/admin/api/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ blacklistedModels: next.join(",") })
+    });
+    state.config = response.config || state.config;
+}
 
 window.openTestModal = function(modelName) {
     document.getElementById('testModelName').textContent = `目标对象: ${modelName}`;
