@@ -231,6 +231,13 @@
                     <button type="button" class="ghost-button" onclick="selectAllChannelModels()">全选过滤项</button>
                     <button type="button" class="ghost-button" onclick="deselectAllChannelModels()">清空选项</button>
                 </div>
+                <label class="field" style="flex-direction: row; align-items: center; gap: 10px;">
+                    <span style="white-space: nowrap;">模式：</span>
+                    <select id="channelModelsMode" onchange="onChannelModelsModeChange()" style="flex: 1;">
+                        <option value="whitelist">白名单模式（勾选 = 仅允许使用这些模型）</option>
+                        <option value="blacklist">黑名单模式（勾选 = 禁用这些模型，未勾选正常可用）</option>
+                    </select>
+                </label>
                 <div id="channelModelsMeta" class="muted" style="font-size: 0.85rem;">如果不勾选任何模型，则代表全量放通渠道内的所有模型。</div>
                 <div id="channelModelsList" class="model-checklist" style="max-height: 400px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; padding-right: 10px;">
                     <!-- Models dynamically inserted here -->

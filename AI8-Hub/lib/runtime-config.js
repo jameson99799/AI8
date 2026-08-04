@@ -22,6 +22,7 @@ const EDITABLE_FIELDS = [
     "requestBodyLimit",
     "ai8ImageModels",
     "ai8AllowedModels",
+    "ai8BlacklistedModels",
     "customChannels",
     "gptallEnabled",
     "gptallBaseUrl",
@@ -30,6 +31,7 @@ const EDITABLE_FIELDS = [
     "gptallFingerprint",
     "gptallDefaultModel",
     "gptallAllowedModels",
+    "gptallBlacklistedModels",
     "gptallRequestTimeoutMs",
     "gptallDeleteGroupAfterResponse",
 ];
@@ -105,6 +107,7 @@ class RuntimeConfigStore {
             requestBodyLimit: this.runtimeConfig.requestBodyLimit,
             ai8ImageModels: this.runtimeConfig.ai8ImageModels.join(","),
             ai8AllowedModels: this.runtimeConfig.ai8AllowedModels.join(","),
+            ai8BlacklistedModels: this.runtimeConfig.ai8BlacklistedModels.join(","),
             customChannels: this.runtimeConfig.customChannels,
             gptallEnabled: this.runtimeConfig.gptallEnabled,
             gptallBaseUrl: this.runtimeConfig.gptallBaseUrl,
@@ -113,6 +116,7 @@ class RuntimeConfigStore {
             gptallFingerprint: this.runtimeConfig.gptallFingerprint,
             gptallDefaultModel: this.runtimeConfig.gptallDefaultModel,
             gptallAllowedModels: this.runtimeConfig.gptallAllowedModels.join(","),
+            gptallBlacklistedModels: this.runtimeConfig.gptallBlacklistedModels.join(","),
             gptallRequestTimeoutMs: this.runtimeConfig.gptallRequestTimeoutMs,
             gptallDeleteGroupAfterResponse: this.runtimeConfig.gptallDeleteGroupAfterResponse,
         };
@@ -151,6 +155,7 @@ class RuntimeConfigStore {
             requestBodyLimit: process.env.REQUEST_BODY_LIMIT,
             ai8ImageModels: process.env.AI8_IMAGE_MODELS,
             ai8AllowedModels: process.env.AI8_ALLOWED_MODELS,
+            ai8BlacklistedModels: process.env.AI8_BLACKLISTED_MODELS,
             customChannels: [],
             gptallEnabled: process.env.GPTALL_ENABLED,
             gptallBaseUrl: process.env.GPTALL_BASE_URL,
@@ -159,6 +164,7 @@ class RuntimeConfigStore {
             gptallFingerprint: process.env.GPTALL_FINGERPRINT,
             gptallDefaultModel: process.env.GPTALL_DEFAULT_MODEL,
             gptallAllowedModels: process.env.GPTALL_ALLOWED_MODELS,
+            gptallBlacklistedModels: process.env.GPTALL_BLACKLISTED_MODELS,
             gptallRequestTimeoutMs: process.env.GPTALL_REQUEST_TIMEOUT_MS,
             gptallDeleteGroupAfterResponse: process.env.GPTALL_DELETE_GROUP_AFTER_RESPONSE,
             ...defaults,
@@ -236,6 +242,7 @@ function normalizeConfig(source = {}) {
         requestBodyLimit: normalizeString(source.requestBodyLimit || source.REQUEST_BODY_LIMIT || "50mb"),
         ai8ImageModels: parseCsv(source.ai8ImageModels ?? source.AI8_IMAGE_MODELS ?? "gpt-image-1,gpt-image-2,dall-e-3"),
         ai8AllowedModels: parseCsv(source.ai8AllowedModels ?? source.AI8_ALLOWED_MODELS ?? ""),
+        ai8BlacklistedModels: parseCsv(source.ai8BlacklistedModels ?? source.AI8_BLACKLISTED_MODELS ?? ""),
         customChannels: Array.isArray(source.customChannels) ? source.customChannels : [],
         gptallEnabled: parseBoolean(source.gptallEnabled ?? source.GPTALL_ENABLED, false),
         gptallBaseUrl: normalizeString(source.gptallBaseUrl || source.GPTALL_BASE_URL || "https://gpt-all.chat/api"),
@@ -244,6 +251,7 @@ function normalizeConfig(source = {}) {
         gptallFingerprint: normalizeString(source.gptallFingerprint || source.GPTALL_FINGERPRINT || "89346554"),
         gptallDefaultModel: normalizeString(source.gptallDefaultModel || source.GPTALL_DEFAULT_MODEL),
         gptallAllowedModels: parseCsv(source.gptallAllowedModels ?? source.GPTALL_ALLOWED_MODELS ?? ""),
+        gptallBlacklistedModels: parseCsv(source.gptallBlacklistedModels ?? source.GPTALL_BLACKLISTED_MODELS ?? ""),
         gptallRequestTimeoutMs: parseNumber(
             source.gptallRequestTimeoutMs ?? source.GPTALL_REQUEST_TIMEOUT_MS,
             300000

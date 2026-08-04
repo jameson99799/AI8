@@ -34,7 +34,7 @@ const {
     openAiToAnthropicChunk,
     openAiToAnthropicResponse,
 } = require("./lib/anthropic-format");
-const { buildGptAllClient, fetchAggregatedModels, proxyToCustomChannel, resolveTargetChannel } = require("./lib/channel-manager");
+const { buildGptAllClient, fetchAggregatedModels, proxyToCustomChannel, resolveTargetChannel, isBlacklisted } = require("./lib/channel-manager");
 
 const APP_NAME = "ai8-adapter";
 const STARTED_AT = new Date();
@@ -284,7 +284,10 @@ app.post("/v1/messages", asyncHandler(async (req, res) => {
     let requestModel = String(body.model || config.ai8DefaultModel).trim();
     const resolved = await resolveTargetChannel(requestModel, config, client);
     const targetChannel = resolved.targetChannel;
-    
+    if (isBlacklisted(resolved.actualModel, config, resolved.targetChannel)) {
+        throw createHttpError(403, `Model "${resolved.actualModel}" is blacklisted and cannot be used.`);
+    }
+
     if (targetChannel && targetChannel.protocol === "claude") {
         return proxyToCustomChannel(req, res, targetChannel, resolved.actualModel, body, buildErrorPayload, true);
     }
@@ -386,6 +389,9 @@ app.post("/v1/chat/completions", asyncHandler(async (req, res) => {
     const resolved = await resolveTargetChannel(requestModel, config, client);
     let targetChannel = resolved.targetChannel;
     let actualModel = resolved.actualModel;
+    if (isBlacklisted(actualModel, config, resolved.targetChannel)) {
+        throw createHttpError(403, `Model "${actualModel}" is blacklisted and cannot be used.`);
+    }
     
     if (targetChannel?.protocol === "gptall") {
         return handleGptAllChatCompletion(req, res, actualModel, body, config);
@@ -511,6 +517,9 @@ app.post("/v1/images/generations", asyncHandler(async (req, res) => {
     const resolved = await resolveTargetChannel(requestModel, config, client);
     const targetChannel = resolved.targetChannel;
     const actualModel = resolved.actualModel;
+    if (isBlacklisted(actualModel, config, resolved.targetChannel)) {
+        throw createHttpError(403, `Model "${actualModel}" is blacklisted and cannot be used.`);
+    }
     
     if (targetChannel) {
         throw createHttpError(400, "Native image generation proxying for custom channels is not supported yet.");
@@ -616,6 +625,9 @@ app.post("/v1/images/edits", asyncHandler(async (req, res) => {
     const resolved = await resolveTargetChannel(requestModel, config, client);
     const targetChannel = resolved.targetChannel;
     const actualModel = resolved.actualModel;
+    if (isBlacklisted(actualModel, config, resolved.targetChannel)) {
+        throw createHttpError(403, `Model "${actualModel}" is blacklisted and cannot be used.`);
+    }
     
     if (targetChannel) {
         throw createHttpError(400, "Native image edit proxying for custom channels is not supported yet.");

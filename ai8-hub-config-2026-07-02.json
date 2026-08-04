@@ -1,0 +1,37 @@
+{
+  "adminToken": "x9981509",
+  "ai8AuthToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjI0OTEsInNpZ24iOiI5MjM5N2QwMjE2N2E1NWJkNTNiMWRjY2E3NWYzMjQzMCIsInJvbGUiOiJ1c2VyIiwiZXhwIjoyMDk4MjQ1MjkyLCJuYmYiOjE3ODI4ODUyOTIsImlhdCI6MTc4Mjg4NTI5Mn0.lXLiK8jR0bq58OaEUEVVXCZaj23AaVGusnWiYQrqFXo",
+  "ai8BaseUrl": "https://ai8.rcouyi.com/api",
+  "ai8DefaultModel": "openai_chat::gpt-4.1-mini",
+  "ai8RequestTimeoutMs": "300000",
+  "apiKeys": "x9981509",
+  "updatedAt": "2026-07-01T10:00:31.775Z",
+  "customChannels": [
+    {
+      "name": "yingweida",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "apiKey": "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",
+      "protocol": "both",
+      "enabled": true
+    },
+    {
+      "name": "agnes-ai",
+      "baseUrl": "https://apihub.agnes-ai.com/v1",
+      "apiKey": "sk-GLpaSqRR3aB28wkn5tKsirHYyTUERnd2nXPiO5w10oe7Th7C",
+      "protocol": "both",
+      "enabled": true,
+      "models": []
+    },
+    {
+      "name": "ouyi",
+      "baseUrl": "https://api.rcouyi.com",
+      "apiKey": "sk-Qm4c03dk48F9xyWP84Ec625cF48547E586F012724f1d636d",
+      "protocol": "both",
+      "enabled": true,
+      "models": [
+        "ouyi-5-preview",
+        "ouyi-5-preview-thinking"
+      ]
+    }
+  ]
+}

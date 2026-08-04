@@ -122,11 +122,15 @@ function filterCachedModels(models, config, forAdmin) {
         if (m._source === "ai8") {
             const ai8Whitelist = Array.isArray(config.ai8AllowedModels) && config.ai8AllowedModels.length > 0 ? config.ai8AllowedModels : null;
             if (ai8Whitelist !== null && !ai8Whitelist.includes(m.origId)) return false;
+            const ai8Blacklist = Array.isArray(config.ai8BlacklistedModels) && config.ai8BlacklistedModels.length > 0 ? config.ai8BlacklistedModels : null;
+            if (ai8Blacklist !== null && ai8Blacklist.includes(m.origId)) return false;
             return true;
         }
         if (m._source === "gptall") {
             const gptallWhitelist = Array.isArray(config.gptallAllowedModels) && config.gptallAllowedModels.length > 0 ? config.gptallAllowedModels : null;
             if (gptallWhitelist !== null && !gptallWhitelist.includes(m.origId)) return false;
+            const gptallBlacklist = Array.isArray(config.gptallBlacklistedModels) && config.gptallBlacklistedModels.length > 0 ? config.gptallBlacklistedModels : null;
+            if (gptallBlacklist !== null && gptallBlacklist.includes(m.origId)) return false;
             return true;
         }
         const channel = (config.customChannels || []).find(c => c.name === m._source);
@@ -134,8 +138,23 @@ function filterCachedModels(models, config, forAdmin) {
         if (!channel.enabled) return false;
         const whitelist = Array.isArray(channel.models) && channel.models.length > 0 ? channel.models : null;
         if (whitelist !== null && !whitelist.includes(m.origId)) return false;
+        const blacklist = Array.isArray(channel.blacklistedModels) && channel.blacklistedModels.length > 0 ? channel.blacklistedModels : null;
+        if (blacklist !== null && blacklist.includes(m.origId)) return false;
         return true;
     });
+}
+
+function isBlacklisted(requestModel, config, targetChannel) {
+    if (targetChannel && targetChannel.name === "gpt-all") {
+        const list = Array.isArray(config.gptallBlacklistedModels) ? config.gptallBlacklistedModels : [];
+        return list.includes(requestModel);
+    }
+    if (targetChannel) {
+        const list = Array.isArray(targetChannel.blacklistedModels) ? targetChannel.blacklistedModels : [];
+        return list.includes(requestModel);
+    }
+    const ai8List = Array.isArray(config.ai8BlacklistedModels) ? config.ai8BlacklistedModels : [];
+    return ai8List.includes(requestModel);
 }
 
 async function resolveTargetChannel(requestModel, config, client, logger) {
@@ -277,4 +296,4 @@ async function proxyToCustomChannel(req, res, targetChannel, actualModel, body, 
     }
 }
 
-module.exports = { buildGptAllClient, fetchAggregatedModels, proxyToCustomChannel, resolveTargetChannel };
+module.exports = { buildGptAllClient, fetchAggregatedModels, proxyToCustomChannel, resolveTargetChannel, isBlacklisted, filterCachedModels };

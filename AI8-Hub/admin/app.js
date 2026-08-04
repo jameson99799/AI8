@@ -535,52 +535,97 @@ function renderGlobalModels(models) {
         }).join("");
 }
 
+function getChannelFilteredModels(sourceId, isGptAll) {
+    const ch = (sourceId === 'ai8' || isGptAll) ? null : state.channels[sourceId];
+    return state.models.filter(m => {
+        if (sourceId === 'ai8') return m.channel === 'ai8' || (m.attr && m.attr.providerName === 'ai8') || (m.channel === undefined);
+        if (isGptAll) return m._source === 'gptall' || m.channel === 'gpt-all' || (m.attr && m.attr.providerName === 'gpt-all');
+        return ch && (m.channel === ch.name || (m.attr && m.attr.providerName === ch.name));
+    });
+}
+
+function getChannelSelection(sourceId, isGptAll, mode) {
+    if (sourceId === 'ai8') {
+        return mode === 'blacklist'
+            ? (Array.isArray(state.config.ai8BlacklistedModels) ? state.config.ai8BlacklistedModels : [])
+            : (Array.isArray(state.config.ai8AllowedModels) ? state.config.ai8AllowedModels : []);
+    }
+    if (isGptAll) {
+        const raw = mode === 'blacklist' ? state.config.gptallBlacklistedModels : state.config.gptallAllowedModels;
+        return String(raw || "").split(",").map(s => s.trim()).filter(Boolean);
+    }
+    const ch = state.channels[sourceId];
+    if (mode === 'blacklist') {
+        return Array.isArray(ch && ch.blacklistedModels) ? ch.blacklistedModels : [];
+    }
+    return Array.isArray(ch && ch.models) ? ch.models : [];
+}
+
+function renderChannelModelChecklist() {
+    const sourceId = document.getElementById('modelsModal').dataset.activeSourceId;
+    const isGptAll = sourceId === 'gptall';
+    const ch = (sourceId === 'ai8' || isGptAll) ? null : state.channels[sourceId];
+    const mode = document.getElementById('channelModelsMode').value;
+    const meta = document.getElementById('channelModelsMeta');
+    if (mode === 'blacklist') {
+        meta.textContent = "黑名单模式：勾选的模型将被禁用，通过 API 无法获取；取消勾选即恢复可用。未勾选任何模型 = 全量放通。";
+    } else {
+        meta.textContent = "白名单模式：勾选的模型才允许使用；未勾选任何模型 = 全量放通渠道内的所有模型。";
+    }
+
+    const filteredModels = getChannelFilteredModels(sourceId, isGptAll);
+    const clist = document.getElementById('channelModelsList');
+    clist.innerHTML = "";
+    if (filteredModels.length === 0) {
+        clist.innerHTML = "<div class='muted'>该渠道当前未探测到有效的模型映射表，可能被关闭或密钥配错。</div>";
+        return;
+    }
+
+    const selection = getChannelSelection(sourceId, isGptAll, mode);
+    filteredModels.forEach(m => {
+        const v = m.origId || m.value; // Display actual origId without suffix for clarity in selection
+        const isChecked = selection.includes(v) ? 'checked' : '';
+        const row = document.createElement("label");
+        row.className = "checklist-item flex-between";
+        row.style = "display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; border: 1px solid var(--border-color); border-radius: 6px; cursor: pointer;";
+        row.dataset.searchTarget = v.toLowerCase();
+        row.innerHTML = `
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <input type="checkbox" class="channel-model-checkbox" value="${escapeHtml(v)}" ${isChecked}>
+                <span style="font-weight: 500;">${escapeHtml(v)}</span>
+            </div>
+            <button type="button" class="ghost-button" onclick="event.preventDefault(); openTestModal('${escapeHtml(m.display_value || m.value)}')">🧪测试</button>
+        `;
+        clist.appendChild(row);
+    });
+    filterChannelModels();
+}
+
 window.openChannelModelsModal = function(sourceId) {
     const isGptAll = sourceId === 'gptall';
     const ch = (sourceId === 'ai8' || isGptAll) ? null : state.channels[sourceId];
-    const filteredModels = state.models.filter(m => {
-        if (sourceId === 'ai8') return m.channel === 'ai8' || (m.attr && m.attr.providerName === 'ai8') || (m.channel === undefined);
-        if (isGptAll) return m._source === 'gptall' || m.channel === 'gpt-all' || (m.attr && m.attr.providerName === 'gpt-all');
-        return m.channel === ch.name || (m.attr && m.attr.providerName === ch.name);
-    });
+    const filteredModels = getChannelFilteredModels(sourceId, isGptAll);
     
-    let sourceName = sourceId === 'ai8' ? '原生 AI8' : (isGptAll ? '原生 gpt-all' : ch.name);
+    let sourceName = sourceId === 'ai8' ? '原生 AI8' : (isGptAll ? '原生 gpt-all' : (ch ? ch.name : "未知渠道"));
     document.getElementById('modelsModalTitle').textContent = `[${escapeHtml(sourceName)}] 专属模型池`;
     
     // Store sourceId globally to use it in Save button
     document.getElementById('modelsModal').dataset.activeSourceId = sourceId;
     document.getElementById('modelSearchInput').value = ""; // clear search
     
-    const clist = document.getElementById('channelModelsList');
-    clist.innerHTML = "";
-    if(filteredModels.length === 0) {
-        clist.innerHTML = "<div class='muted'>该渠道当前未探测到有效的模型映射表，可能被关闭或密钥配错。</div>";
-    } else {
-        const whitelist = sourceId === 'ai8' 
-            ? (Array.isArray(state.config.ai8AllowedModels) ? state.config.ai8AllowedModels : [])
-            : (isGptAll
-                ? String(state.config.gptallAllowedModels || "").split(",").map(s => s.trim()).filter(Boolean)
-                : (ch && Array.isArray(ch.models) ? ch.models : []));
-            
-        filteredModels.forEach(m => {
-            const v = m.origId || m.value; // Display actual origId without suffix for clarity in selection
-            const isChecked = whitelist.includes(v) ? 'checked' : '';
-            const row = document.createElement("label");
-            row.className = "checklist-item flex-between";
-            row.style = "display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; border: 1px solid var(--border-color); border-radius: 6px; cursor: pointer;";
-            row.dataset.searchTarget = v.toLowerCase();
-            row.innerHTML = `
-                <div style="display: flex; gap: 8px; align-items: center;">
-                    <input type="checkbox" class="channel-model-checkbox" value="${escapeHtml(v)}" ${isChecked}>
-                    <span style="font-weight: 500;">${escapeHtml(v)}</span>
-                </div>
-                <button type="button" class="ghost-button" onclick="event.preventDefault(); openTestModal('${escapeHtml(m.display_value || m.value)}')">🧪测试</button>
-            `;
-            clist.appendChild(row);
-        });
-    }
+    const savedMode = window.localStorage.getItem(`ai8_model_mode_${sourceId}`) || 'whitelist';
+    document.getElementById('channelModelsMode').value = savedMode === 'blacklist' ? 'blacklist' : 'whitelist';
     
+    renderChannelModelChecklist();
     document.getElementById('modelsModal').classList.add('active');
+}
+
+window.onChannelModelsModeChange = function() {
+    const sourceId = document.getElementById('modelsModal').dataset.activeSourceId;
+    if (!sourceId) return;
+    const mode = document.getElementById('channelModelsMode').value;
+    window.localStorage.setItem(`ai8_model_mode_${sourceId}`, mode);
+    renderChannelModelChecklist();
 }
 
 window.filterChannelModels = function() {
@@ -614,24 +659,29 @@ document.getElementById('btnSaveChannelModels').addEventListener('click', async 
         const btn = document.getElementById('btnSaveChannelModels');
         const oldText = btn.textContent;
         btn.textContent = "正在同步配置...";
+        const mode = document.getElementById('channelModelsMode').value;
         
         if (sourceId === 'ai8') {
             const response = await requestJson("/admin/api/config", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ ai8AllowedModels: selectedModels.join(",") })
+                body: JSON.stringify(mode === 'blacklist'
+                    ? { ai8BlacklistedModels: selectedModels.join(",") }
+                    : { ai8AllowedModels: selectedModels.join(",") })
             });
             state.config = response.config || state.config;
         } else if (sourceId === 'gptall') {
             const response = await requestJson("/admin/api/config", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ gptallAllowedModels: selectedModels.join(",") })
+                body: JSON.stringify(mode === 'blacklist'
+                    ? { gptallBlacklistedModels: selectedModels.join(",") }
+                    : { gptallAllowedModels: selectedModels.join(",") })
             });
             state.config = response.config || state.config;
         } else {
             let updated = [...state.channels];
-            updated[sourceId].models = selectedModels;
+            updated[sourceId][mode === 'blacklist' ? 'blacklistedModels' : 'models'] = selectedModels;
             
             await requestJson("/admin/api/channels", {
                 method: "PUT",
