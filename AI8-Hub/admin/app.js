@@ -537,7 +537,7 @@ function renderGlobalModels(models) {
 
 // ----- Global Blacklist Management -----
 function getGlobalBlacklist() {
-    const raw = state.config.blacklistedModels;
+    const raw = (state.config && state.config.blacklistedModels);
     if (Array.isArray(raw)) return raw;
     return String(raw || "").split(",").map(s => s.trim()).filter(Boolean);
 }
