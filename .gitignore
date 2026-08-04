@@ -4,3 +4,4 @@ logs/
 .env
 *.log
 .DS_Store
+ai8-hub-config-*.json
