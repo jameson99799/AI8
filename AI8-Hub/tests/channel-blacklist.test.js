@@ -18,12 +18,26 @@ function makeModels() {
 
 test("filterCachedModels returns all models for admin regardless of filters", () => {
     const config = {
+        blacklistedModels: ["deep1"],
         ai8BlacklistedModels: ["ai8-a"],
         gptallBlacklistedModels: ["gpt1"],
-        customChannels: [{ name: "custom1", enabled: true, blacklistedModels: ["deep1"] }],
+        customChannels: [{ name: "custom1", enabled: true, blacklistedModels: ["deep2"] }],
     };
     const result = filterCachedModels(makeModels(), config, true);
     assert.equal(result.length, 6);
+});
+
+test("filterCachedModels applies global blacklist by aggregated id", () => {
+    const config = {
+        blacklistedModels: ["deep1【custom1】"],
+        ai8BlacklistedModels: [],
+        gptallBlacklistedModels: [],
+        customChannels: [{ name: "custom1", enabled: true }],
+    };
+    const models = makeModels().map(m => ({ ...m, value: m._source === "custom1" ? `${m.origId}【custom1】` : m.origId }));
+    const result = filterCachedModels(models, config, false);
+    assert.ok(!result.some(m => m.origId === "deep1"));
+    assert.ok(result.some(m => m.origId === "deep2"));
 });
 
 test("filterCachedModels applies ai8 blacklist", () => {

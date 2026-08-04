@@ -284,6 +284,9 @@ app.post("/v1/messages", asyncHandler(async (req, res) => {
     let requestModel = String(body.model || config.ai8DefaultModel).trim();
     const resolved = await resolveTargetChannel(requestModel, config, client);
     const targetChannel = resolved.targetChannel;
+    if (config.blacklistedModels.includes(requestModel)) {
+        throw createHttpError(403, `Model "${requestModel}" is blacklisted and cannot be used.`);
+    }
     if (isBlacklisted(resolved.actualModel, config, resolved.targetChannel)) {
         throw createHttpError(403, `Model "${resolved.actualModel}" is blacklisted and cannot be used.`);
     }
@@ -389,6 +392,9 @@ app.post("/v1/chat/completions", asyncHandler(async (req, res) => {
     const resolved = await resolveTargetChannel(requestModel, config, client);
     let targetChannel = resolved.targetChannel;
     let actualModel = resolved.actualModel;
+    if (config.blacklistedModels.includes(requestModel)) {
+        throw createHttpError(403, `Model "${requestModel}" is blacklisted and cannot be used.`);
+    }
     if (isBlacklisted(actualModel, config, resolved.targetChannel)) {
         throw createHttpError(403, `Model "${actualModel}" is blacklisted and cannot be used.`);
     }
@@ -517,6 +523,9 @@ app.post("/v1/images/generations", asyncHandler(async (req, res) => {
     const resolved = await resolveTargetChannel(requestModel, config, client);
     const targetChannel = resolved.targetChannel;
     const actualModel = resolved.actualModel;
+    if (config.blacklistedModels.includes(requestModel)) {
+        throw createHttpError(403, `Model "${requestModel}" is blacklisted and cannot be used.`);
+    }
     if (isBlacklisted(actualModel, config, resolved.targetChannel)) {
         throw createHttpError(403, `Model "${actualModel}" is blacklisted and cannot be used.`);
     }
@@ -625,6 +634,9 @@ app.post("/v1/images/edits", asyncHandler(async (req, res) => {
     const resolved = await resolveTargetChannel(requestModel, config, client);
     const targetChannel = resolved.targetChannel;
     const actualModel = resolved.actualModel;
+    if (config.blacklistedModels.includes(requestModel)) {
+        throw createHttpError(403, `Model "${requestModel}" is blacklisted and cannot be used.`);
+    }
     if (isBlacklisted(actualModel, config, resolved.targetChannel)) {
         throw createHttpError(403, `Model "${actualModel}" is blacklisted and cannot be used.`);
     }

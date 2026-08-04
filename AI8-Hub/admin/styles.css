@@ -307,3 +307,11 @@ textarea { resize: vertical; min-height: 80px; }
 .status-banner { margin-top: 1rem; font-size: 0.9rem; color: var(--accent); }
 .status-banner.error { color: var(--danger); }
 .status-banner.success { color: var(--success); }
+
+.blacklist-transfer { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start; }
+.blacklist-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.blacklist-col-header h3 { margin: 0 0 8px; font-size: 1rem; }
+.blacklist-actions { margin-top: 4px; }
+.blacklist-panel { animation: fadeIn 0.2s ease; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@media (max-width: 860px) { .blacklist-transfer { grid-template-columns: 1fr; } }

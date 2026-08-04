@@ -118,7 +118,9 @@ async function fetchAggregatedModels(client, config, forceRefresh, logger, forAd
 
 function filterCachedModels(models, config, forAdmin) {
     if (forAdmin) return models;
+    const globalBlacklist = Array.isArray(config.blacklistedModels) && config.blacklistedModels.length > 0 ? config.blacklistedModels : null;
     return models.filter(m => {
+        if (globalBlacklist !== null && globalBlacklist.includes(m.value || m.origId)) return false;
         if (m._source === "ai8") {
             const ai8Whitelist = Array.isArray(config.ai8AllowedModels) && config.ai8AllowedModels.length > 0 ? config.ai8AllowedModels : null;
             if (ai8Whitelist !== null && !ai8Whitelist.includes(m.origId)) return false;

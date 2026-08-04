@@ -156,11 +156,46 @@
                         <h2>聚合模型</h2>
                         <p>所有启用的渠道模型池，包含渠道的后缀区隔标志。</p>
                     </div>
-                    <button id="refreshModelsButton" class="primary-button">强刷获取模型</button>
+                    <div style="display:flex; gap:10px;">
+                        <button id="refreshModelsButton" class="primary-button">强刷获取模型</button>
+                        <button id="blacklistToggleButton" class="ghost-button" onclick="toggleBlacklistPanel()">🖤 黑名单管理</button>
+                    </div>
                 </header>
                 <div class="glass-panel">
                     <div id="modelsMeta" class="muted pb-4">加载中...</div>
                     <div id="modelsList" class="tag-cloud"></div>
+                </div>
+                <div id="blacklistPanel" class="blacklist-panel" style="display:none; margin-top: 1rem;">
+                    <div class="glass-panel blacklist-transfer">
+                        <div class="blacklist-col">
+                            <div class="blacklist-col-header">
+                                <h3>可拉取模型池</h3>
+                                <div class="flex-between" style="gap:8px; align-items:center;">
+                                    <input type="search" id="blPoolSearch" placeholder="模糊搜索模型名称..." style="flex:1;" oninput="filterBlacklistPool()">
+                                    <button type="button" class="ghost-button" onclick="selectAllBlacklistPool()">全选</button>
+                                    <button type="button" class="ghost-button" onclick="deselectAllBlacklistPool()">清空</button>
+                                </div>
+                            </div>
+                            <div id="blacklistPoolList" class="model-checklist" style="max-height: 340px; overflow-y:auto; display:flex; flex-direction:column; gap:6px;"></div>
+                            <div class="blacklist-actions">
+                                <button type="button" class="primary-button" style="width:100%;" onclick="addModelsToBlacklist()">➡️ 将选中模型加入黑名单</button>
+                            </div>
+                        </div>
+                        <div class="blacklist-col">
+                            <div class="blacklist-col-header">
+                                <h3>黑名单模型</h3>
+                                <div class="flex-between" style="gap:8px; align-items:center;">
+                                    <input type="search" id="blListSearch" placeholder="模糊搜索模型名称..." style="flex:1;" oninput="filterBlacklistList()">
+                                    <button type="button" class="ghost-button" onclick="selectAllBlacklistList()">全选</button>
+                                    <button type="button" class="ghost-button" onclick="deselectAllBlacklistList()">清空</button>
+                                </div>
+                            </div>
+                            <div id="blacklistModelsList" class="model-checklist" style="max-height: 340px; overflow-y:auto; display:flex; flex-direction:column; gap:6px;"></div>
+                            <div class="blacklist-actions">
+                                <button type="button" class="danger-button" style="width:100%;" onclick="removeModelsFromBlacklist()">⬅️ 移除选中的黑名单模型</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </section>
 
