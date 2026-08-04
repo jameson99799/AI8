@@ -26,6 +26,14 @@ const elements = {
     ai8DefaultModel: document.getElementById("ai8DefaultModel"),
     ai8RequestTimeoutMs: document.getElementById("ai8RequestTimeoutMs"),
     apiKeys: document.getElementById("apiKeys"),
+    gptallEnabled: document.getElementById("gptallEnabled"),
+    gptallBaseUrl: document.getElementById("gptallBaseUrl"),
+    gptallAuthToken: document.getElementById("gptallAuthToken"),
+    gptallCookie: document.getElementById("gptallCookie"),
+    gptallFingerprint: document.getElementById("gptallFingerprint"),
+    gptallDefaultModel: document.getElementById("gptallDefaultModel"),
+    gptallAllowedModels: document.getElementById("gptallAllowedModels"),
+    gptallRequestTimeoutMs: document.getElementById("gptallRequestTimeoutMs"),
     
     // Import / Export
     exportConfigBtn: document.getElementById("exportConfigBtn"),
@@ -252,6 +260,14 @@ async function saveGlobalConfig() {
             ai8DefaultModel: elements.ai8DefaultModel.value.trim(),
             ai8RequestTimeoutMs: toNumberString(elements.ai8RequestTimeoutMs.value),
             apiKeys: elements.apiKeys.value.trim(),
+            gptallEnabled: elements.gptallEnabled.value === "true",
+            gptallBaseUrl: elements.gptallBaseUrl.value.trim(),
+            gptallAuthToken: elements.gptallAuthToken.value.trim(),
+            gptallCookie: elements.gptallCookie.value.trim(),
+            gptallFingerprint: elements.gptallFingerprint.value.trim(),
+            gptallDefaultModel: elements.gptallDefaultModel.value.trim(),
+            gptallAllowedModels: elements.gptallAllowedModels.value.trim(),
+            gptallRequestTimeoutMs: toNumberString(elements.gptallRequestTimeoutMs.value),
         };
 
         const response = await requestJson("/admin/api/config", {
@@ -682,6 +698,14 @@ function renderConfig(config) {
     elements.ai8DefaultModel.value = config.ai8DefaultModel || "";
     if (elements.ai8RequestTimeoutMs) elements.ai8RequestTimeoutMs.value = config.ai8RequestTimeoutMs || "";
     elements.apiKeys.value = config.apiKeys || "";
+    if (elements.gptallEnabled) elements.gptallEnabled.value = config.gptallEnabled === true ? "true" : "false";
+    if (elements.gptallBaseUrl) elements.gptallBaseUrl.value = config.gptallBaseUrl || "";
+    if (elements.gptallAuthToken) elements.gptallAuthToken.value = config.gptallAuthToken || "";
+    if (elements.gptallCookie) elements.gptallCookie.value = config.gptallCookie || "";
+    if (elements.gptallFingerprint) elements.gptallFingerprint.value = config.gptallFingerprint || "";
+    if (elements.gptallDefaultModel) elements.gptallDefaultModel.value = config.gptallDefaultModel || "";
+    if (elements.gptallAllowedModels) elements.gptallAllowedModels.value = config.gptallAllowedModels || "";
+    if (elements.gptallRequestTimeoutMs) elements.gptallRequestTimeoutMs.value = config.gptallRequestTimeoutMs || "";
 }
 
 async function loadLogs() {

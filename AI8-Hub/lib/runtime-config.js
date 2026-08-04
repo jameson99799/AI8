@@ -23,6 +23,15 @@ const EDITABLE_FIELDS = [
     "ai8ImageModels",
     "ai8AllowedModels",
     "customChannels",
+    "gptallEnabled",
+    "gptallBaseUrl",
+    "gptallAuthToken",
+    "gptallCookie",
+    "gptallFingerprint",
+    "gptallDefaultModel",
+    "gptallAllowedModels",
+    "gptallRequestTimeoutMs",
+    "gptallDeleteGroupAfterResponse",
 ];
 
 class RuntimeConfigStore {
@@ -97,6 +106,15 @@ class RuntimeConfigStore {
             ai8ImageModels: this.runtimeConfig.ai8ImageModels.join(","),
             ai8AllowedModels: this.runtimeConfig.ai8AllowedModels.join(","),
             customChannels: this.runtimeConfig.customChannels,
+            gptallEnabled: this.runtimeConfig.gptallEnabled,
+            gptallBaseUrl: this.runtimeConfig.gptallBaseUrl,
+            gptallAuthToken: this.runtimeConfig.gptallAuthToken,
+            gptallCookie: this.runtimeConfig.gptallCookie,
+            gptallFingerprint: this.runtimeConfig.gptallFingerprint,
+            gptallDefaultModel: this.runtimeConfig.gptallDefaultModel,
+            gptallAllowedModels: this.runtimeConfig.gptallAllowedModels.join(","),
+            gptallRequestTimeoutMs: this.runtimeConfig.gptallRequestTimeoutMs,
+            gptallDeleteGroupAfterResponse: this.runtimeConfig.gptallDeleteGroupAfterResponse,
         };
     }
 
@@ -134,6 +152,15 @@ class RuntimeConfigStore {
             ai8ImageModels: process.env.AI8_IMAGE_MODELS,
             ai8AllowedModels: process.env.AI8_ALLOWED_MODELS,
             customChannels: [],
+            gptallEnabled: process.env.GPTALL_ENABLED,
+            gptallBaseUrl: process.env.GPTALL_BASE_URL,
+            gptallAuthToken: process.env.GPTALL_AUTH_TOKEN,
+            gptallCookie: process.env.GPTALL_COOKIE,
+            gptallFingerprint: process.env.GPTALL_FINGERPRINT,
+            gptallDefaultModel: process.env.GPTALL_DEFAULT_MODEL,
+            gptallAllowedModels: process.env.GPTALL_ALLOWED_MODELS,
+            gptallRequestTimeoutMs: process.env.GPTALL_REQUEST_TIMEOUT_MS,
+            gptallDeleteGroupAfterResponse: process.env.GPTALL_DELETE_GROUP_AFTER_RESPONSE,
             ...defaults,
         };
     }
@@ -210,6 +237,21 @@ function normalizeConfig(source = {}) {
         ai8ImageModels: parseCsv(source.ai8ImageModels ?? source.AI8_IMAGE_MODELS ?? "gpt-image-1,gpt-image-2,dall-e-3"),
         ai8AllowedModels: parseCsv(source.ai8AllowedModels ?? source.AI8_ALLOWED_MODELS ?? ""),
         customChannels: Array.isArray(source.customChannels) ? source.customChannels : [],
+        gptallEnabled: parseBoolean(source.gptallEnabled ?? source.GPTALL_ENABLED, false),
+        gptallBaseUrl: normalizeString(source.gptallBaseUrl || source.GPTALL_BASE_URL || "https://gpt-all.chat/api"),
+        gptallAuthToken: normalizeString(source.gptallAuthToken || source.GPTALL_AUTH_TOKEN),
+        gptallCookie: normalizeString(source.gptallCookie || source.GPTALL_COOKIE),
+        gptallFingerprint: normalizeString(source.gptallFingerprint || source.GPTALL_FINGERPRINT || "89346554"),
+        gptallDefaultModel: normalizeString(source.gptallDefaultModel || source.GPTALL_DEFAULT_MODEL),
+        gptallAllowedModels: parseCsv(source.gptallAllowedModels ?? source.GPTALL_ALLOWED_MODELS ?? ""),
+        gptallRequestTimeoutMs: parseNumber(
+            source.gptallRequestTimeoutMs ?? source.GPTALL_REQUEST_TIMEOUT_MS,
+            300000
+        ),
+        gptallDeleteGroupAfterResponse: parseBoolean(
+            source.gptallDeleteGroupAfterResponse ?? source.GPTALL_DELETE_GROUP_AFTER_RESPONSE,
+            true
+        ),
     };
 }
 

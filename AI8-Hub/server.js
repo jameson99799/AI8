@@ -34,7 +34,7 @@ const {
     openAiToAnthropicChunk,
     openAiToAnthropicResponse,
 } = require("./lib/anthropic-format");
-const { fetchAggregatedModels, proxyToCustomChannel, resolveTargetChannel } = require("./lib/channel-manager");
+const { buildGptAllClient, fetchAggregatedModels, proxyToCustomChannel, resolveTargetChannel } = require("./lib/channel-manager");
 
 const APP_NAME = "ai8-adapter";
 const STARTED_AT = new Date();
@@ -50,6 +50,11 @@ const logger = new RuntimeLogger({
 });
 
 const clientState = {
+    instance: null,
+    signature: "",
+};
+
+const gptallClientState = {
     instance: null,
     signature: "",
 };
@@ -382,6 +387,10 @@ app.post("/v1/chat/completions", asyncHandler(async (req, res) => {
     let targetChannel = resolved.targetChannel;
     let actualModel = resolved.actualModel;
     
+    if (targetChannel?.protocol === "gptall") {
+        return handleGptAllChatCompletion(req, res, actualModel, body, config);
+    }
+
     if (targetChannel) {
         return proxyToCustomChannel(req, res, targetChannel, actualModel, body, buildErrorPayload);
     }
@@ -831,6 +840,275 @@ async function handleStreamingChatCompletion(req, res, options) {
     }
 }
 
+function getGptAllClient() {
+    const config = getConfig();
+    const signature = JSON.stringify([
+        config.gptallEnabled,
+        config.gptallBaseUrl,
+        config.gptallAuthToken,
+        config.gptallCookie,
+        config.gptallFingerprint,
+        config.gptallDefaultModel,
+        config.gptallRequestTimeoutMs,
+        config.gptallDeleteGroupAfterResponse,
+    ]);
+    if (!gptallClientState.instance || gptallClientState.signature !== signature) {
+        if (!config.gptallAuthToken) {
+            throw createHttpError(502, "gpt-all channel is not configured: GPTALL_AUTH_TOKEN is missing.");
+        }
+        gptallClientState.instance = buildGptAllClient(config);
+        gptallClientState.signature = signature;
+    }
+    return gptallClientState.instance;
+}
+
+async function handleGptAllChatCompletion(req, res, model, body, config) {
+    const gptallClient = getGptAllClient();
+    const created = Math.floor(Date.now() / 1000);
+    const completionId = randomId("chatcmpl");
+    const requestModel = String(body.model || model || config.gptallDefaultModel || "").trim();
+
+    const preparedMessages = await prepareMessages(body.messages, false, {
+        mediaFetchTimeoutMs: config.mediaFetchTimeoutMs,
+    });
+
+    const systemPrompt = String(preparedMessages.systemPrompt || "").trim();
+    const promptParts = [];
+    if (systemPrompt) {
+        promptParts.push(`System prompt:\n${systemPrompt}`);
+    }
+    promptParts.push(preparedMessages.text);
+    const prompt = promptParts.filter(Boolean).join("\n\n");
+
+    if (body.stream) {
+        const abortController = new AbortController();
+        req.on("close", () => abortController.abort());
+
+        let finalRecord = null;
+        let streamedContent = "";
+
+        res.status(200);
+        res.setHeader("Cache-Control", "no-cache, no-transform");
+        res.setHeader("Connection", "keep-alive");
+        res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+        if (typeof res.flushHeaders === "function") {
+            res.flushHeaders();
+        }
+
+        writeSse(
+            res,
+            buildChatCompletionChunk({
+                created,
+                delta: {
+                    content: "",
+                    role: "assistant",
+                },
+                id: completionId,
+                model: requestModel,
+            })
+        );
+
+        try {
+            const streamResult = await gptallClient.streamChatCompletion(
+                {
+                    model: actualModelForGptAll(model),
+                    text: prompt,
+                    signal: abortController.signal,
+                },
+                {
+                    onObject(record) {
+                        finalRecord = record;
+                    },
+                    onText(chunk) {
+                        streamedContent += chunk;
+                        writeSse(
+                            res,
+                            buildChatCompletionChunk({
+                                created,
+                                delta: {
+                                    content: chunk,
+                                },
+                                id: completionId,
+                                model: requestModel,
+                            })
+                        );
+                    },
+                }
+            );
+            finalRecord = finalRecord || streamResult?.record || null;
+        } catch (error) {
+            if (abortController.signal.aborted) {
+                res.end();
+                return;
+            }
+            writeSse(res, buildSseErrorEvent(error, requestModel));
+            res.end();
+            return;
+        }
+
+        const failureInfo = gptAllFailureInfo(finalRecord);
+        if (failureInfo) {
+            writeSse(res, buildSseErrorEvent(new Error(failureInfo.message), requestModel));
+            res.end();
+            return;
+        }
+
+        const finalContent = resolveFinalContent(finalRecord, streamedContent);
+        if (!finalContent && !finalRecord) {
+            writeSse(res, buildSseErrorEvent(new Error("gpt-all returned an empty response."), requestModel));
+            res.end();
+            return;
+        }
+        const finalDelta = computeStreamFinalDelta(streamedContent, finalContent);
+        if (finalDelta) {
+            streamedContent += finalDelta;
+            writeSse(
+                res,
+                buildChatCompletionChunk({
+                    created,
+                    delta: {
+                        content: finalDelta,
+                    },
+                    id: completionId,
+                    model: requestModel,
+                })
+            );
+        }
+
+        writeSse(
+            res,
+            buildChatCompletionChunk({
+                created,
+                delta: {},
+                finishReason: "stop",
+                id: completionId,
+                model: requestModel,
+            })
+        );
+
+        if (body?.stream_options?.include_usage) {
+            writeSse(
+                res,
+                buildChatCompletionChunk({
+                    created,
+                    delta: {},
+                    finishReason: null,
+                    id: completionId,
+                    model: requestModel,
+                    usage: normalizeUsage({ useTokens: finalRecord?.totalTokens }),
+                })
+            );
+        }
+
+        res.write("data: [DONE]\n\n");
+        res.end();
+        return;
+    }
+
+    const abortController = new AbortController();
+    req.on("close", () => abortController.abort());
+
+    let content = "";
+    let finalRecord = null;
+
+    const streamResult = await gptallClient.streamChatCompletion(
+        {
+            model: actualModelForGptAll(model),
+            text: prompt,
+            signal: abortController.signal,
+        },
+        {
+            onObject(record) {
+                finalRecord = record;
+                if (typeof record?.content === "string" && record.content) {
+                    content = record.content;
+                }
+            },
+            onText(chunk) {
+                content += chunk;
+            },
+        }
+    );
+    finalRecord = finalRecord || streamResult?.record || null;
+
+    const failureInfo = gptAllFailureInfo(finalRecord);
+    if (failureInfo) {
+        throw createHttpError(502, failureInfo.message);
+    }
+
+    const finalContent = resolveFinalContent(finalRecord, content);
+    if (!finalContent && !finalRecord) {
+        throw createHttpError(502, "gpt-all returned an empty response.");
+    }
+    if (streamResult?.chatId) {
+        res.setHeader("x-gptall-chat-id", String(streamResult.chatId));
+    }
+    if (streamResult?.groupId) {
+        res.setHeader("x-gptall-group-id", String(streamResult.groupId));
+    }
+    const images = extractAi8Images(finalContent);
+
+    res.json(
+        buildChatCompletion({
+            content: finalContent,
+            created,
+            id: completionId,
+            images,
+            metadata: buildAi8Metadata({
+                imageCount: images.length,
+                ...(streamResult?.chatId ? { session_id: streamResult.chatId } : {}),
+                ...(streamResult?.groupId ? { gptall_group_id: streamResult.groupId } : {}),
+            }),
+            model: requestModel,
+            usage: normalizeUsage({ useTokens: finalRecord?.totalTokens }),
+        })
+    );
+}
+
+function actualModelForGptAll(model) {
+    return String(model || "").trim();
+}
+
+function gptAllFailureInfo(record) {
+    if (!record || typeof record !== "object") {
+        return null;
+    }
+    const reason = String(record.finishReason || record.finish_reason || "");
+    if (reason === "fallback_failed") {
+        const message = String(
+            record.fallbackReasonText ||
+            record.fallbackNotice ||
+            record.fallback_reason_text ||
+            record.fallback_notice ||
+            ""
+        );
+        return {
+            message: message || "gpt-all upstream request failed.",
+        };
+    }
+    return null;
+}
+
+function buildSseErrorEvent(error, model) {
+    const message = error?.message || "gpt-all request failed.";
+    return `data: ${JSON.stringify({
+        choices: [
+            {
+                delta: {},
+                finish_reason: "error",
+                index: 0,
+            },
+        ],
+        created: Math.floor(Date.now() / 1000),
+        error: {
+            message,
+        },
+        id: randomId("chatcmpl"),
+        model: model || "",
+        object: "chat.completion.chunk",
+    })}\n\n`;
+}
+
 async function prepareMessages(messages, reuseSession, options = {}) {
     if (!Array.isArray(messages) || messages.length === 0) {
         throw createHttpError(400, "messages must be a non-empty array.");
@@ -1004,6 +1282,7 @@ function buildRuntimeSnapshot(req) {
             api_key_count: config.apiKeys.length,
             local_api_protected: config.apiKeys.length > 0,
             upstream_ready: Boolean(config.ai8AuthToken),
+            gptall_ready: Boolean(config.gptallAuthToken) && config.gptallEnabled !== false,
         },
         config: {
             ai8_base_url: config.ai8BaseUrl,
@@ -1017,6 +1296,9 @@ function buildRuntimeSnapshot(req) {
             public_base_url: config.publicBaseUrl,
             request_body_limit: config.requestBodyLimit,
             x_app_version: config.ai8XAppVersion,
+            gptall_enabled: config.gptallEnabled ?? false,
+            gptall_base_url: config.gptallBaseUrl,
+            gptall_default_model: config.gptallDefaultModel,
         },
         network: {
             base_url_candidates: baseUrlCandidates,
@@ -1051,6 +1333,10 @@ function buildEffectiveConfigSummary(config) {
         public_base_url: config.publicBaseUrl,
         request_body_limit: config.requestBodyLimit,
         x_app_version: config.ai8XAppVersion,
+        gptall_configured: Boolean(config.gptallAuthToken),
+        gptall_enabled: config.gptallEnabled ?? false,
+        gptall_base_url: config.gptallBaseUrl,
+        gptall_default_model: config.gptallDefaultModel,
     };
 }
 

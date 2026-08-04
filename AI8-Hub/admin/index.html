@@ -109,6 +109,42 @@
                             <span>请求超时毫秒</span>
                             <input id="ai8RequestTimeoutMs" type="number" placeholder="300000">
                         </label>
+                        <div class="field field-span-2 config-section-divider">gpt-all 独立渠道</div>
+                        <label class="field field-span-2">
+                            <span>gpt-all 启用</span>
+                            <select id="gptallEnabled">
+                                <option value="true">启用</option>
+                                <option value="false">停用</option>
+                            </select>
+                        </label>
+                        <label class="field field-span-2">
+                            <span>gpt-all API 令牌 (JWT)</span>
+                            <input id="gptallAuthToken" autocomplete="off" type="password" placeholder="Bearer 用的 eyJ...">
+                        </label>
+                        <label class="field field-span-2">
+                            <span>gpt-all 基础地址</span>
+                            <input id="gptallBaseUrl" autocomplete="off" placeholder="默认: https://gpt-all.chat/api">
+                        </label>
+                        <label class="field field-span-2">
+                            <span>gpt-all Cookie (fl_ua_key)</span>
+                            <input id="gptallCookie" autocomplete="off" placeholder="fl_ua_key=...">
+                        </label>
+                        <label class="field">
+                            <span>gpt-all Fingerprint</span>
+                            <input id="gptallFingerprint" autocomplete="off" placeholder="89346554">
+                        </label>
+                        <label class="field">
+                            <span>gpt-all 请求超时毫秒</span>
+                            <input id="gptallRequestTimeoutMs" type="number" placeholder="300000">
+                        </label>
+                        <label class="field field-span-2">
+                            <span>gpt-all 默认模型</span>
+                            <input id="gptallDefaultModel" autocomplete="off" placeholder="如 doubao-seed-2.0-lite">
+                        </label>
+                        <label class="field field-span-2">
+                            <span>gpt-all 模型白名单 (逗号分隔, 留空=全部)</span>
+                            <input id="gptallAllowedModels" autocomplete="off" placeholder="如 doubao-seed-2.0-lite,gpt-5.4-mini">
+                        </label>
                     </form>
                 </div>
             </section>

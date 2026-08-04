@@ -1,5 +1,22 @@
 "use strict";
 
+const GptAllClient = require("./gptall-client");
+
+function buildGptAllClient(config) {
+    if (!config || !config.gptallAuthToken) {
+        throw new Error("GPTALL_AUTH_TOKEN is not configured.");
+    }
+    return new GptAllClient({
+        authToken: config.gptallAuthToken,
+        baseUrl: config.gptallBaseUrl,
+        cookie: config.gptallCookie,
+        fingerprint: config.gptallFingerprint,
+        defaultModel: config.gptallDefaultModel,
+        deleteGroupAfterResponse: config.gptallDeleteGroupAfterResponse,
+        requestTimeoutMs: config.gptallRequestTimeoutMs,
+    });
+}
+
 let modelCache = {
     models: [],
     timestamp: 0,
@@ -28,7 +45,32 @@ async function fetchAggregatedModels(client, config, forceRefresh, logger, forAd
     }
     
     let allModels = [...ai8Models];
-    
+
+    if (config.gptallEnabled !== false && config.gptallAuthToken) {
+        try {
+            const gptallClient = buildGptAllClient(config);
+            const gptallModels = await gptallClient.fetchModels();
+            for (const gptallModel of gptallModels) {
+                const origId = String(gptallModel.value || gptallModel.model || "").trim();
+                if (origId && !allModels.some(m => m._source === "gptall" && m.origId === origId)) {
+                    const modelId = `${origId}【gpt-all】`;
+                    allModels.push({
+                        label: modelId,
+                        value: modelId,
+                        origId,
+                        channel: "gpt-all",
+                        attr: { providerName: "gpt-all" },
+                        _source: "gptall",
+                        _actualModel: origId,
+                        _isToolSupported: gptallModel.isToolSupported === true,
+                    });
+                }
+            }
+        } catch (e) {
+            if (logger) logger.warn("Failed to fetch gpt-all models", { error: String(e) });
+        }
+    }
+
     for (const channel of (config.customChannels || [])) {
         if (!channel.enabled) continue;
         
@@ -82,6 +124,11 @@ function filterCachedModels(models, config, forAdmin) {
             if (ai8Whitelist !== null && !ai8Whitelist.includes(m.origId)) return false;
             return true;
         }
+        if (m._source === "gptall") {
+            const gptallWhitelist = Array.isArray(config.gptallAllowedModels) && config.gptallAllowedModels.length > 0 ? config.gptallAllowedModels : null;
+            if (gptallWhitelist !== null && !gptallWhitelist.includes(m.origId)) return false;
+            return true;
+        }
         const channel = (config.customChannels || []).find(c => c.name === m._source);
         if (!channel) return false;
         if (!channel.enabled) return false;
@@ -108,6 +155,9 @@ async function resolveTargetChannel(requestModel, config, client, logger) {
         if (channelName === "AI8直连" || channelName === "ai8") {
             return { targetChannel: null, actualModel };
         }
+        if (channelName === "gpt-all" || channelName === "gptall") {
+            return { targetChannel: { protocol: "gptall", name: "gpt-all" }, actualModel };
+        }
     }
     
     // 2. Try to find in cache for unprefixed models
@@ -119,7 +169,10 @@ async function resolveTargetChannel(requestModel, config, client, logger) {
         }
 
         const cached = modelCache.models.find(m => m.value === requestModel || m.origId === requestModel);
-        if (cached && cached._source !== "ai8") {
+        if (cached && cached._source === "gptall") {
+            targetChannel = { protocol: "gptall", name: "gpt-all" };
+            actualModel = cached._actualModel || requestModel;
+        } else if (cached && cached._source !== "ai8") {
             const customChannels = config.customChannels || [];
             targetChannel = customChannels.find(c => c.name === cached._source && c.enabled);
             if (targetChannel) {
@@ -224,4 +277,4 @@ async function proxyToCustomChannel(req, res, targetChannel, actualModel, body, 
     }
 }
 
-module.exports = { fetchAggregatedModels, proxyToCustomChannel, resolveTargetChannel };
+module.exports = { buildGptAllClient, fetchAggregatedModels, proxyToCustomChannel, resolveTargetChannel };

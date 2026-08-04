@@ -72,6 +72,19 @@ AI8_CONFIG_PATH=./data/config.json
 AI8_LOG_PATH=./logs/ai8-adapter.log
 ```
 
+Optional gpt-all channel (independent channel, models get the `【gpt-all】` suffix):
+
+```env
+GPTALL_ENABLED=true
+GPTALL_AUTH_TOKEN=your_gptall_jwt
+GPTALL_COOKIE=fl_ua_key=...
+GPTALL_FINGERPRINT=89346554
+GPTALL_BASE_URL=https://gpt-all.chat/api
+GPTALL_DEFAULT_MODEL=doubao-seed-2.0-lite
+GPTALL_ALLOWED_MODELS=doubao-seed-2.0-lite,gpt-5.4-mini
+GPTALL_REQUEST_TIMEOUT_MS=300000
+```
+
 Notes:
 
 - `API_KEYS` protects your local OpenAI-compatible API.
@@ -135,6 +148,7 @@ The console can:
 
 - view effective runtime settings
 - update AI8 token, local API keys, admin token, timeouts, default model, and public base URL
+- configure the gpt-all channel (token, cookie, fingerprint, default model, whitelist)
 - fetch the current upstream model list
 - test upstream connectivity
 - inspect persisted log output
