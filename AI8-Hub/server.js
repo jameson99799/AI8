@@ -225,7 +225,17 @@ app.get("/admin/api/logs", requireAdminAuth, (req, res) => {
     });
 });
 
-app.use("/admin", express.static(ADMIN_DIR, { index: "index.html" }));
+app.use("/admin", express.static(ADMIN_DIR, {
+    index: "index.html",
+    maxAge: 0,
+    etag: false,
+    lastModified: false,
+    setHeaders(res) {
+        res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+        res.setHeader("Pragma", "no-cache");
+        res.setHeader("Expires", "0");
+    },
+}));
 
 app.use("/v1", requireLocalApiAuth);
 app.use("/ai8", requireLocalApiAuth);
