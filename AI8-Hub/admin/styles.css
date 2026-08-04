@@ -309,6 +309,22 @@ textarea { resize: vertical; min-height: 80px; }
 .status-banner.success { color: var(--success); }
 
 .blacklist-transfer { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start; }
+.checklist-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+.checklist-item:hover { background: #F0F6FF; border-color: var(--accent); }
+.checklist-item input[type="checkbox"] { flex-shrink: 0; }
+.checklist-item .checklist-name { font-weight: 500; word-break: break-all; }
+.model-checklist { scrollbar-width: thin; }
+.model-checklist .muted { padding: 6px 12px; }
+
 .blacklist-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .blacklist-col-header h3 { margin: 0 0 8px; font-size: 1rem; }
 .blacklist-actions { margin-top: 4px; }

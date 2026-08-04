@@ -534,13 +534,31 @@ async function fetchModels(forceRefresh) {
 }
 
 function renderGlobalModels(models) {
-    elements.modelsMeta.textContent = `系统共动态拦截提取了 ${models.length} 个模型支持。`;
-    elements.modelsList.innerHTML = models
-        .map(model => {
-            const value = escapeHtml(model.display_value || model.value || "");
-            const provider = escapeHtml(model?.attr?.providerName || "ai8");
-            return `<span class="tag">${value}<small style="opacity:0.75; margin-left:4px;">[${provider}]</small></span>`;
-        }).join("");
+    elements.modelsMeta.textContent = `系统共动态拦截提取了 ${models.length} 个模型支持。勾选后可将模型直接加入全局黑名单。`;
+    const listEl = elements.modelsList;
+    listEl.innerHTML = "";
+    if (!models.length) {
+        listEl.innerHTML = "<div class='muted'>未获取到任何模型，请先点击「强刷获取模型」。</div>";
+        return;
+    }
+    models.forEach(model => {
+        const v = String(model.value || model.origId || "").trim();
+        if (!v) return;
+        const provider = escapeHtml(model?.attr?.providerName || model.channel || "ai8");
+        const row = document.createElement("label");
+        row.className = "checklist-item flex-between";
+        row.dataset.searchTarget = v.toLowerCase();
+        const display = model.display_value || v;
+        row.innerHTML = `
+            <div style="display:flex; gap:8px; align-items:center; min-width:0;">
+                <input type="checkbox" class="global-model-checkbox" value="${escapeHtml(v)}">
+                <span class="checklist-name">${escapeHtml(display)}</span>
+                <small style="opacity:0.7; flex-shrink:0;">[${provider}]</small>
+            </div>
+        `;
+        listEl.appendChild(row);
+    });
+    filterGlobalModels();
 }
 
 // ----- Global Blacklist Management -----
@@ -558,22 +576,24 @@ function visibleBlacklistCheckboxes(containerId, cbClass) {
 
 function renderBlacklistPanels() {
     const blacklist = getGlobalBlacklist();
-    const pool = state.models.filter(m => !blacklist.includes(m.value || m.origId));
+    const pool = state.models.filter(m => {
+        const v = String(m.value || m.origId || "").trim();
+        return v && !blacklist.includes(v);
+    });
     const poolList = document.getElementById('blacklistPoolList');
     poolList.innerHTML = "";
     if (pool.length === 0) {
         poolList.innerHTML = "<div class='muted'>模型池为空（或全部已进黑名单）。</div>";
     } else {
         pool.forEach(m => {
-            const v = m.value || m.origId;
+            const v = String(m.value || m.origId || "").trim();
             const row = document.createElement("label");
             row.className = "checklist-item flex-between";
-            row.style = "display:flex; justify-content:space-between; align-items:center; padding:6px 12px; border:1px solid var(--border-color); border-radius:6px; cursor:pointer;";
             row.dataset.searchTarget = v.toLowerCase();
             row.innerHTML = `
-                <div style="display:flex; gap:8px; align-items:center;">
+                <div style="display:flex; gap:8px; align-items:center; min-width:0;">
                     <input type="checkbox" class="bl-pool-checkbox" value="${escapeHtml(v)}">
-                    <span style="font-weight:500;">${escapeHtml(v)}</span>
+                    <span class="checklist-name">${escapeHtml(m.display_value || v)}</span>
                 </div>
             `;
             poolList.appendChild(row);
@@ -586,14 +606,14 @@ function renderBlacklistPanels() {
         bl.innerHTML = "<div class='muted'>黑名单为空。</div>";
     } else {
         blacklist.forEach(v => {
+            if (!v) return;
             const row = document.createElement("label");
             row.className = "checklist-item flex-between";
-            row.style = "display:flex; justify-content:space-between; align-items:center; padding:6px 12px; border:1px solid var(--border-color); border-radius:6px; cursor:pointer;";
             row.dataset.searchTarget = v.toLowerCase();
             row.innerHTML = `
-                <div style="display:flex; gap:8px; align-items:center;">
+                <div style="display:flex; gap:8px; align-items:center; min-width:0;">
                     <input type="checkbox" class="bl-list-checkbox" value="${escapeHtml(v)}">
-                    <span style="font-weight:500;">${escapeHtml(v)}</span>
+                    <span class="checklist-name">${escapeHtml(v)}</span>
                 </div>
             `;
             bl.appendChild(row);
@@ -616,13 +636,38 @@ window.toggleBlacklistPanel = function() {
 window.filterBlacklistPool = function() {
     const term = document.getElementById('blPoolSearch').value.toLowerCase().trim();
     const items = document.querySelectorAll('#blacklistPoolList .checklist-item');
-    items.forEach(item => { item.style.display = (!term || item.dataset.searchTarget.includes(term)) ? "flex" : "none"; });
+    items.forEach(item => { item.style.display = (!term || (item.dataset.searchTarget || '').includes(term)) ? "flex" : "none"; });
 }
 
 window.filterBlacklistList = function() {
     const term = document.getElementById('blListSearch').value.toLowerCase().trim();
     const items = document.querySelectorAll('#blacklistModelsList .checklist-item');
-    items.forEach(item => { item.style.display = (!term || item.dataset.searchTarget.includes(term)) ? "flex" : "none"; });
+    items.forEach(item => { item.style.display = (!term || (item.dataset.searchTarget || '').includes(term)) ? "flex" : "none"; });
+}
+
+window.filterGlobalModels = function() {
+    const term = document.getElementById('globalModelSearch').value.toLowerCase().trim();
+    const items = document.querySelectorAll('#modelsList .checklist-item');
+    items.forEach(item => { item.style.display = (!term || (item.dataset.searchTarget || '').includes(term)) ? "flex" : "none"; });
+}
+
+window.selectAllGlobalModels = function() {
+    visibleBlacklistCheckboxes('modelsList', '.global-model-checkbox').forEach(cb => cb.checked = true);
+}
+
+window.deselectAllGlobalModels = function() {
+    visibleBlacklistCheckboxes('modelsList', '.global-model-checkbox').forEach(cb => cb.checked = false);
+}
+
+window.addSelectedGlobalToBlacklist = async function() {
+    const selected = Array.from(document.querySelectorAll('#modelsList .global-model-checkbox:checked')).map(cb => cb.value);
+    if (selected.length === 0) {
+        alert("请先在聚合模型中勾选要加入黑名单的模型。");
+        return;
+    }
+    const merged = Array.from(new Set([...getGlobalBlacklist(), ...selected]));
+    await saveGlobalBlacklist(merged);
+    renderGlobalModels(state.models);
 }
 
 window.selectAllBlacklistPool = function() {

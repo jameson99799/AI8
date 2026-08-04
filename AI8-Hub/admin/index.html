@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>AI8 Hub | 服务枢纽管理后台</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./styles.css?v=3">
+    <link rel="stylesheet" href="./styles.css?v=4">
 </head>
 <body>
     <div id="loginOverlay" class="overlay active">
@@ -162,11 +162,7 @@
                         <button id="blacklistToggleButton" class="ghost-button" onclick="toggleBlacklistPanel()">🖤 黑名单管理</button>
                     </div>
                 </header>
-                <div class="glass-panel">
-                    <div id="modelsMeta" class="muted pb-4">加载中...</div>
-                    <div id="modelsList" class="tag-cloud"></div>
-                </div>
-                <div id="blacklistPanel" class="blacklist-panel" style="display:none; margin-top: 1rem;">
+                <div id="blacklistPanel" class="blacklist-panel" style="display:none; margin-bottom: 1rem;">
                     <div class="glass-panel blacklist-transfer">
                         <div class="blacklist-col">
                             <div class="blacklist-col-header">
@@ -197,6 +193,16 @@
                             </div>
                         </div>
                     </div>
+                </div>
+                <div class="glass-panel">
+                    <div id="modelsMeta" class="muted pb-4">加载中...</div>
+                    <div class="flex-between" style="gap:8px; align-items:center; margin-bottom:8px;">
+                        <input type="search" id="globalModelSearch" placeholder="模糊搜索聚合模型名称..." style="flex:1;" oninput="filterGlobalModels()">
+                        <button type="button" class="ghost-button" onclick="selectAllGlobalModels()">全选</button>
+                        <button type="button" class="ghost-button" onclick="deselectAllGlobalModels()">清空</button>
+                        <button type="button" class="primary-button" onclick="addSelectedGlobalToBlacklist()">➡️ 将选中模型加入黑名单</button>
+                    </div>
+                    <div id="modelsList" class="model-checklist" style="max-height: 60vh; overflow-y:auto; display:flex; flex-direction:column; gap:6px;"></div>
                 </div>
             </section>
 
@@ -308,6 +314,6 @@
         </div>
     </div>
     
-    <script src="./app.js?v=4"></script>
+    <script src="./app.js?v=5"></script>
 </body>
 </html>
