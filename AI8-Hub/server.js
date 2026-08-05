@@ -40,6 +40,7 @@ const toolMarker = require("./lib/tool-marker");
 const APP_NAME = "ai8-adapter";
 const STARTED_AT = new Date();
 const ADMIN_DIR = path.resolve(__dirname, "admin");
+const STREAM_TIMEOUT_MS = 30 * 60 * 1000;
 
 const configStore = new RuntimeConfigStore({
     envPath: path.resolve(__dirname, ".env"),
@@ -255,7 +256,7 @@ app.post("/ai8/sessions", asyncHandler(async (req, res) => {
     const config = getConfig();
     const session = await getClient().createSession({
         contextCount: body.context_count,
-        maxToken: body.max_tokens,
+        maxToken: resolveSessionMaxToken(body.max_tokens, config),
         mcp: body.mcp,
         model: body.model || config.ai8DefaultModel,
         name: body.name,
@@ -452,7 +453,7 @@ app.post("/v1/chat/completions", asyncHandler(async (req, res) => {
 
     const isEphemeralSession = true;
     let session = await client.createSession({
-        maxToken: body.max_tokens,
+        maxToken: resolveSessionMaxToken(body.max_tokens, config),
         model: resolvedModel.value,
         prompt: sessionPrompt.value,
         temperature: body.temperature,
@@ -483,6 +484,7 @@ app.post("/v1/chat/completions", asyncHandler(async (req, res) => {
 
     let content = "";
     let finalRecord = null;
+    let reasoningContent = "";
 
     const streamResult = await client.streamChatCompletion(
         {
@@ -491,6 +493,7 @@ app.post("/v1/chat/completions", asyncHandler(async (req, res) => {
             signal: abortController.signal,
             text: preparedMessages.text,
             thinking,
+            timeoutMs: STREAM_TIMEOUT_MS,
         },
         {
             onObject(record) {
@@ -498,6 +501,9 @@ app.post("/v1/chat/completions", asyncHandler(async (req, res) => {
                 if (typeof record?.aiText === "string" && record.aiText) {
                     content = record.aiText;
                 }
+            },
+            onReasoning(chunk) {
+                reasoningContent += chunk;
             },
             onText(chunk) {
                 content += chunk;
@@ -535,6 +541,7 @@ app.post("/v1/chat/completions", asyncHandler(async (req, res) => {
                 taskId: streamResult?.taskId || null,
             }),
             model: resolvedModel.value,
+            reasoningContent: reasoningContent || finalRecord?.reasoning_content || null,
             toolCalls,
             usage: normalizeUsage(finalRecord || streamResult?.record),
         })
@@ -593,6 +600,7 @@ app.post("/v1/images/generations", asyncHandler(async (req, res) => {
             sessionId: session.id,
             signal: abortController.signal,
             text: preparedMessages.text,
+            timeoutMs: STREAM_TIMEOUT_MS,
         },
         {
             onObject(record) {
@@ -695,6 +703,7 @@ app.post("/v1/images/edits", asyncHandler(async (req, res) => {
             sessionId: session.id,
             signal: abortController.signal,
             text: preparedMessages.text,
+            timeoutMs: STREAM_TIMEOUT_MS,
         },
         {
             onObject(record) {
@@ -811,10 +820,24 @@ async function handleStreamingChatCompletion(req, res, options) {
                 signal: abortController.signal,
                 text: preparedMessages.text,
                 thinking,
+                timeoutMs: STREAM_TIMEOUT_MS,
             },
             {
                 onObject(record) {
                     finalRecord = record;
+                },
+                onReasoning(chunk) {
+                    writeSse(
+                        res,
+                        buildChatCompletionChunk({
+                            created,
+                            delta: {
+                                reasoning_content: chunk,
+                            },
+                            id: completionId,
+                            model,
+                        })
+                    );
                 },
                 onText(chunk) {
                     if (markerParser) {
@@ -1019,6 +1042,7 @@ async function handleGptAllChatCompletion(req, res, model, body, config, resolve
                     model: actualModelForGptAll(model),
                     text: prompt,
                     signal: abortController.signal,
+                    timeoutMs: STREAM_TIMEOUT_MS,
                 },
                 {
                     onObject(record) {
@@ -1160,12 +1184,13 @@ async function handleGptAllChatCompletion(req, res, model, body, config, resolve
     let content = "";
     let finalRecord = null;
 
-    const streamResult = await gptallClient.streamChatCompletion(
-        {
-            model: actualModelForGptAll(model),
-            text: prompt,
-            signal: abortController.signal,
-        },
+const streamResult = await gptallClient.streamChatCompletion(
+            {
+                model: actualModelForGptAll(model),
+                text: prompt,
+                signal: abortController.signal,
+                timeoutMs: STREAM_TIMEOUT_MS,
+            },
         {
             onObject(record) {
                 finalRecord = record;
@@ -1217,6 +1242,7 @@ async function handleGptAllChatCompletion(req, res, model, body, config, resolve
                 ...(streamResult?.groupId ? { gptall_group_id: streamResult.groupId } : {}),
             }),
             model: requestModel,
+            reasoningContent: finalRecord?.reasoning_content || null,
             toolCalls,
             usage: normalizeUsage({ useTokens: finalRecord?.totalTokens }),
         })
@@ -1820,9 +1846,26 @@ function buildAttachmentNote(files) {
     return names.length > 0 ? `[${label}: ${names.join(", ")}]` : `[${label}: ${files.length}]`;
 }
 
+function resolveSessionMaxToken(clientMaxTokens, config) {
+    const requested = Number(clientMaxTokens);
+    const floor = Number(config?.ai8MinOutputTokens) || 0;
+    if (Number.isFinite(requested) && requested > 0) {
+        return Math.max(requested, floor);
+    }
+    return undefined;
+}
+
 function resolveFinalContent(finalRecord, fallbackContent = "") {
     if (typeof finalRecord?.aiText === "string" && finalRecord.aiText) {
         return finalRecord.aiText;
+    }
+
+    if (typeof finalRecord?.content === "string" && finalRecord.content) {
+        return finalRecord.content;
+    }
+
+    if (typeof finalRecord?.text === "string" && finalRecord.text) {
+        return finalRecord.text;
     }
 
     return typeof fallbackContent === "string" ? fallbackContent : "";

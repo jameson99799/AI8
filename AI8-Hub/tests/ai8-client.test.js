@@ -87,3 +87,71 @@ test("buildSessionUpdatePayload merges returned session with prompt patch", () =
     assert.equal(payload.model, "openai_chat::gpt-5.1");
     assert.equal(payload.contextCount, 8);
 });
+
+test("_splitThinkingChunk streams reasoning until </think> then switches to answer", () => {
+    const client = createClient();
+    const state = { mode: "answer", buffer: "", reasoning: "", text: "" };
+
+    const open = client._splitThinkingChunk("<think> 首先", state);
+    assert.equal(open.reasoning, "");
+    assert.equal(open.text, "");
+    assert.equal(state.mode, "reasoning");
+    assert.equal(state.buffer, " 首先");
+
+    const mid = client._splitThinkingChunk("，然后", state);
+    assert.equal(mid.reasoning, "");
+    assert.equal(state.mode, "reasoning");
+    assert.equal(state.buffer, " 首先，然后");
+
+    const close = client._splitThinkingChunk("\n</think>\n答案是", state);
+    assert.equal(close.reasoning, " 首先，然后\n");
+    assert.equal(close.text, "\n答案是");
+    assert.equal(state.mode, "answer");
+    assert.equal(state.reasoning, " 首先，然后\n");
+
+    const after = client._splitThinkingChunk("2", state);
+    assert.equal(after.reasoning, "");
+    assert.equal(after.text, "2");
+});
+
+test("_splitThinkingChunk handles marker split across chunks", () => {
+    const client = createClient();
+    const state = { mode: "answer", buffer: "", reasoning: "", text: "" };
+
+    const a = client._splitThinkingChunk("<think> think", state);
+    assert.equal(a.reasoning, "");
+
+    const b = client._splitThinkingChunk("ing</t", state);
+    assert.equal(b.reasoning, " thin");
+
+    const c = client._splitThinkingChunk("hink>\nanswer", state);
+    assert.equal(c.reasoning, "king");
+    assert.equal(c.text, "\nanswer");
+    assert.equal(state.reasoning, " thinking");
+    assert.equal(state.mode, "answer");
+});
+
+test("_normalizeThinkingRecord strips markers and attaches reasoning_content", () => {
+    const client = createClient();
+    const state = { mode: "answer", buffer: "", reasoning: "", text: "" };
+
+    const normalized = client._normalizeThinkingRecord(
+        {
+            aiText: "<think> 推理内容\n</think>\n这是回答",
+        },
+        state
+    );
+
+    assert.equal(normalized.aiText, "\n这是回答");
+    assert.equal(normalized.reasoning_content, " 推理内容\n");
+});
+
+test("_normalizeThinkingRecord keeps streamed reasoning when record has no aiText markers", () => {
+    const client = createClient();
+    const state = { mode: "answer", buffer: "", reasoning: "已流式的推理", text: "" };
+
+    const normalized = client._normalizeThinkingRecord({ aiText: "纯回答" }, state);
+
+    assert.equal(normalized.aiText, "纯回答");
+    assert.equal(normalized.reasoning_content, "已流式的推理");
+});

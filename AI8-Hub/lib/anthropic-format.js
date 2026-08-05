@@ -109,6 +109,16 @@ function anthropicToOpenAiRequest(body) {
         else if (body.tool_choice.type === "tool") payload.tool_choice = { type: "function", function: { name: body.tool_choice.name } };
     }
 
+    const metadataThinking =
+        body?.metadata && Object.prototype.hasOwnProperty.call(body.metadata, "ai8_thinking")
+            ? Boolean(body.metadata.ai8_thinking)
+            : null;
+    const thinkingEnabled =
+        metadataThinking !== null ? metadataThinking : body?.thinking?.type === "enabled";
+    if (thinkingEnabled === true || metadataThinking === false) {
+        payload.metadata = { ...(body.metadata || {}), ai8_thinking: Boolean(thinkingEnabled) };
+    }
+
     return payload;
 }
 

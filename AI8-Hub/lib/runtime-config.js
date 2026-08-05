@@ -11,6 +11,7 @@ const EDITABLE_FIELDS = [
     "ai8DefaultModel",
     "ai8DefaultThinking",
     "ai8RequestTimeoutMs",
+    "ai8MinOutputTokens",
     "ai8DeleteSessionAfterResponse",
     "ai8ReuseSessionInjectSystemPrompt",
     "ai8UseSharedSession",
@@ -145,6 +146,7 @@ class RuntimeConfigStore {
             ai8DefaultModel: process.env.AI8_DEFAULT_MODEL,
             ai8DefaultThinking: process.env.AI8_DEFAULT_THINKING,
             ai8RequestTimeoutMs: process.env.AI8_REQUEST_TIMEOUT_MS,
+            ai8MinOutputTokens: process.env.AI8_MIN_OUTPUT_TOKENS,
             ai8DeleteSessionAfterResponse: process.env.AI8_DELETE_SESSION_AFTER_RESPONSE,
             ai8ReuseSessionInjectSystemPrompt: process.env.AI8_REUSE_SESSION_INJECT_SYSTEM_PROMPT,
             ai8UseSharedSession: process.env.AI8_USE_SHARED_SESSION,
@@ -224,6 +226,7 @@ function normalizeConfig(source = {}) {
         ai8DefaultModel: normalizeString(source.ai8DefaultModel || source.AI8_DEFAULT_MODEL || "openai_chat::gpt-4.1-mini"),
         ai8DefaultThinking: parseBoolean(source.ai8DefaultThinking ?? source.AI8_DEFAULT_THINKING, false),
         ai8RequestTimeoutMs: parseNumber(source.ai8RequestTimeoutMs ?? source.AI8_REQUEST_TIMEOUT_MS, 300000),
+        ai8MinOutputTokens: parseNumber(source.ai8MinOutputTokens ?? source.AI8_MIN_OUTPUT_TOKENS, 8192),
         ai8DeleteSessionAfterResponse: parseBoolean(
             source.ai8DeleteSessionAfterResponse ?? source.AI8_DELETE_SESSION_AFTER_RESPONSE,
             false

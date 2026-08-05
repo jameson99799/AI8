@@ -52,11 +52,15 @@ function buildAdminModelsList(models) {
     }));
 }
 
-function buildChatCompletion({ content, created, id, images = [], metadata = null, model, toolCalls = null, usage }) {
+function buildChatCompletion({ content, created, id, images = [], metadata = null, model, reasoningContent = null, toolCalls = null, usage }) {
     const message = {
         content: content || "",
         role: "assistant",
     };
+
+    if (typeof reasoningContent === "string" && reasoningContent) {
+        message.reasoning_content = reasoningContent;
+    }
 
     if (Array.isArray(toolCalls) && toolCalls.length > 0) {
         message.tool_calls = toolCalls;

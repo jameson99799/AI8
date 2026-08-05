@@ -92,3 +92,30 @@ test("plain string content and text-only array are unchanged", () => {
     });
     assert.equal(arrayResult.messages[0].content, "hello");
 });
+
+test("thinking.enabled is forwarded as metadata.ai8_thinking", () => {
+    const result = anthropicToOpenAiRequest({
+        model: "claude-3-7-sonnet",
+        thinking: { type: "enabled", budget_tokens: 1024 },
+        messages: [{ role: "user", content: "hi" }],
+    });
+    assert.equal(result.metadata.ai8_thinking, true);
+});
+
+test("metadata.ai8_thinking=false overrides thinking.enabled and persists", () => {
+    const result = anthropicToOpenAiRequest({
+        model: "claude-3-7-sonnet",
+        thinking: { type: "enabled" },
+        metadata: { ai8_thinking: false },
+        messages: [{ role: "user", content: "hi" }],
+    });
+    assert.equal(result.metadata.ai8_thinking, false);
+});
+
+test("no thinking field leaves metadata untouched", () => {
+    const result = anthropicToOpenAiRequest({
+        model: "m",
+        messages: [{ role: "user", content: "hi" }],
+    });
+    assert.equal(result.metadata, undefined);
+});

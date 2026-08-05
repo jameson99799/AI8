@@ -252,6 +252,12 @@ class AI8Client {
         let buffer = "";
         let finalRecord = null;
         let taskId = response.headers.get("x-chat-task-id") || null;
+        const thinkingState = {
+            mode: "answer",
+            buffer: "",
+            reasoning: "",
+            text: "",
+        };
 
         for await (const chunk of response.body) {
             buffer += decoder.decode(chunk, { stream: true });
@@ -297,20 +303,24 @@ class AI8Client {
                 }
 
                 if (typeof parsed?.data === "string") {
-                    if (typeof handlers.onText === "function") {
-                        handlers.onText(parsed.data, parsed);
+                    const split = this._splitThinkingChunk(parsed.data, thinkingState);
+                    if (split.reasoning && typeof handlers.onReasoning === "function") {
+                        handlers.onReasoning(split.reasoning, parsed);
+                    }
+                    if (split.text && typeof handlers.onText === "function") {
+                        handlers.onText(split.text, parsed);
                     }
                     continue;
                 }
 
                 if (parsed?.data && typeof parsed.data === "object") {
-                    finalRecord = parsed.data;
+                    finalRecord = this._normalizeThinkingRecord(parsed.data, thinkingState);
                     if (parsed.data.taskId && !taskId) {
                         taskId = parsed.data.taskId;
                     }
 
                     if (typeof handlers.onObject === "function") {
-                        handlers.onObject(parsed.data, parsed);
+                        handlers.onObject(finalRecord, parsed);
                     }
                 }
             }
@@ -324,6 +334,71 @@ class AI8Client {
             record: finalRecord,
             taskId,
         };
+    }
+
+    _splitThinkingChunk(chunk, state) {
+        if (state.mode === "answer") {
+            if (chunk.startsWith("<think>")) {
+                state.mode = "reasoning";
+                state.buffer = "";
+                state.reasoning = "";
+                state.text = "";
+                return this._splitThinkingChunk(chunk.slice("<think>".length), state);
+            }
+            state.text += chunk;
+            return { reasoning: "", text: chunk };
+        }
+
+        state.buffer += chunk;
+        const marker = "</think>";
+        const markerIndex = state.buffer.indexOf(marker);
+        if (markerIndex !== -1) {
+            const reasoningChunk = state.buffer.slice(0, markerIndex);
+            const remainder = state.buffer.slice(markerIndex + marker.length);
+            state.buffer = "";
+            state.mode = "answer";
+            state.reasoning += reasoningChunk;
+            state.text = "";
+            return {
+                reasoning: reasoningChunk,
+                text: remainder,
+            };
+        }
+
+        const keep = Math.min(state.buffer.length, marker.length - 1);
+        const flushable = state.buffer.slice(0, state.buffer.length - keep);
+        const held = state.buffer.slice(state.buffer.length - keep);
+        state.reasoning += flushable;
+        state.buffer = held;
+        return { reasoning: flushable, text: "" };
+    }
+
+    _normalizeThinkingRecord(record, state) {
+        if (!record || typeof record !== "object") {
+            return record;
+        }
+
+        const normalized = { ...record };
+        if (typeof record.aiText === "string") {
+            const raw = record.aiText;
+            let answer = raw;
+            let reasoning = "";
+            if (raw.startsWith("<think>")) {
+                const markerIndex = raw.indexOf("</think>");
+                if (markerIndex !== -1) {
+                    reasoning = raw.slice("<think>".length, markerIndex);
+                    answer = raw.slice(markerIndex + "</think>".length);
+                }
+            }
+            normalized.aiText = answer;
+            if (reasoning || state.reasoning) {
+                normalized.reasoning_content = reasoning || state.reasoning;
+            }
+        } else if (state.reasoning) {
+            normalized.reasoning_content = state.reasoning;
+        }
+
+        return normalized;
     }
 
     async requestJson(path, options = {}) {
