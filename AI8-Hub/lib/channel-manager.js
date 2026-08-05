@@ -28,91 +28,109 @@ async function fetchAggregatedModels(client, config, forceRefresh, logger, forAd
         return filterCachedModels(modelCache.models, config, forAdmin);
     }
 
-    let ai8Models = [];
+    const fetchTasks = [];
+
     if (config.ai8Enabled !== false) {
-        try {
-            const rawAi8Models = await client.fetchModels({ forceRefresh });
-            ai8Models = rawAi8Models.map(m => ({ ...m }));
-            ai8Models.forEach(m => {
-                m._source = "ai8";
-                m.origId = m.value.replace(/【AI8直连】$/, ''); 
-                m.value = `${m.origId}【AI8直连】`;
-                m.label = m.value;
-            });
-        } catch (e) {
-            if (logger) logger.warn("Failed to fetch AI8 models", { error: String(e) });
-        }
+        fetchTasks.push(
+            client.fetchModels({ forceRefresh })
+                .then(rawAi8Models => rawAi8Models.map(m => ({ ...m })))
+                .catch(e => {
+                    if (logger) logger.warn("Failed to fetch AI8 models", { error: String(e) });
+                    return [];
+                })
+        );
     }
-    
-    let allModels = [...ai8Models];
 
     if (config.gptallEnabled !== false && config.gptallAuthToken) {
-        try {
-            const gptallClient = buildGptAllClient(config);
-            const gptallModels = await gptallClient.fetchModels();
-            for (const gptallModel of gptallModels) {
-                const origId = String(gptallModel.value || gptallModel.model || "").trim();
-                if (origId && !allModels.some(m => m._source === "gptall" && m.origId === origId)) {
-                    const modelId = `${origId}【gpt-all】`;
-                    allModels.push({
-                        label: modelId,
-                        value: modelId,
-                        origId,
-                        channel: "gpt-all",
-                        attr: { providerName: "gpt-all" },
-                        _source: "gptall",
-                        _actualModel: origId,
-                        _isToolSupported: gptallModel.isToolSupported === true,
-                    });
-                }
+        fetchTasks.push(
+            buildGptAllClient(config).fetchModels()
+                .then(gptallModels => gptallModels || [])
+                .catch(e => {
+                    if (logger) logger.warn("Failed to fetch gpt-all models", { error: String(e) });
+                    return [];
+                })
+        );
+    }
+
+    const customChannelTasks = (config.customChannels || [])
+        .filter(channel => channel.enabled)
+        .map(channel => {
+            let safeBase = channel.baseUrl.trim().replace(/\/+$/, "");
+            if (safeBase.endsWith("/chat/completions")) {
+                safeBase = safeBase.replace("/chat/completions", "");
             }
-        } catch (e) {
-            if (logger) logger.warn("Failed to fetch gpt-all models", { error: String(e) });
+            const endpoint = safeBase.endsWith("/v1") ? `${safeBase}/models` : `${safeBase}/v1/models`;
+            return fetch(endpoint, {
+                headers: { "Authorization": `Bearer ${channel.apiKey}` },
+                signal: AbortSignal.timeout(5000)
+            })
+                .then(res => (res.ok ? res.json() : null))
+                .then(data => ({
+                    channel,
+                    models: (data && Array.isArray(data.data)) ? data.data : [],
+                }))
+                .catch(e => {
+                    if (logger) logger.warn(`Failed to fetch models for channel ${channel.name}`, { error: String(e) });
+                    return { channel, models: [] };
+                });
+        });
+
+    // Run ai8, gptall and all custom channels in parallel.
+    const [ai8Models, gptallModels, ...customResults] = await Promise.all([...fetchTasks, ...customChannelTasks]);
+
+    const allModels = [];
+
+    for (const m of ai8Models) {
+        const value = String(m.value || "").trim();
+        if (!value) continue;
+        allModels.push({
+            ...m,
+            _source: "ai8",
+            origId: value.replace(/【AI8直连】$/, ''),
+            value: `${value.replace(/【AI8直连】$/, '')}【AI8直连】`,
+            label: `${value.replace(/【AI8直连】$/, '')}【AI8直连】`,
+        });
+    }
+
+    for (const gptallModel of (gptallModels || [])) {
+        const origId = String(gptallModel.value || gptallModel.model || "").trim();
+        if (origId && !allModels.some(m => m._source === "gptall" && m.origId === origId)) {
+            const modelId = `${origId}【gpt-all】`;
+            allModels.push({
+                label: modelId,
+                value: modelId,
+                origId,
+                channel: "gpt-all",
+                attr: { providerName: "gpt-all" },
+                _source: "gptall",
+                _actualModel: origId,
+                _isToolSupported: gptallModel.isToolSupported === true,
+            });
         }
     }
 
-    for (const channel of (config.customChannels || [])) {
-        if (!channel.enabled) continue;
-        
-        let safeBase = channel.baseUrl.trim().replace(/\/+$/, "");
-        if (safeBase.endsWith("/chat/completions")) {
-            safeBase = safeBase.replace("/chat/completions", "");
-        }
-        
-        try {
-            const endpoint = safeBase.endsWith("/v1") ? `${safeBase}/models` : `${safeBase}/v1/models`;
-            const res = await fetch(endpoint, {
-                headers: { "Authorization": `Bearer ${channel.apiKey}` },
-                signal: AbortSignal.timeout(5000)
+    for (const { channel, models } of customResults) {
+        for (const m of models) {
+            if (!m || m.id === undefined || m.id === null) continue;
+            const modelId = `${m.id}【${channel.name}】`;
+            allModels.push({
+                label: modelId,
+                value: modelId,
+                origId: m.id,
+                channel: channel.name,
+                attr: { providerName: channel.name },
+                _source: channel.name,
+                _actualModel: m.id
             });
-            if (res.ok) {
-                const data = await res.json();
-                if (data && Array.isArray(data.data)) {
-                    for (const m of data.data) {
-                        const modelId = `${m.id}【${channel.name}】`;
-                        allModels.push({
-                            label: modelId,
-                            value: modelId,
-                            origId: m.id,
-                            channel: channel.name,
-                            attr: { providerName: channel.name },
-                            _source: channel.name,
-                            _actualModel: m.id
-                        });
-                    }
-                }
-            }
-        } catch (e) {
-            if (logger) logger.warn(`Failed to fetch models for channel ${channel.name}`, { error: String(e) });
         }
     }
-    
+
     modelCache = {
         models: allModels,
         timestamp: Date.now(),
         ttl: modelCache.ttl
     };
-    
+
     return filterCachedModels(allModels, config, forAdmin);
 }
 
@@ -268,7 +286,7 @@ async function proxyToCustomChannel(req, res, targetChannel, actualModel, body, 
                     const { done, value } = await reader.read();
                     if (done) break;
                     if (value) {
-                        res.write(Buffer.from(value));
+                        res.write(value);
                     }
                 }
             } finally {

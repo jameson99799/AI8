@@ -484,15 +484,25 @@ class AI8Client {
     }
 
     _findEventBoundary(buffer) {
-        const match = buffer.match(/\r?\n\r?\n/);
-        if (!match) {
-            return null;
+        // Prefer indexOf over a full-buffer regex to avoid O(n^2) rescanning on
+        // long streams. Find the earliest of \n\n and \r\n\r\n.
+        const lfIndex = buffer.indexOf("\n\n");
+        const crlfIndex = buffer.indexOf("\r\n\r\n");
+
+        if (lfIndex === -1) {
+            if (crlfIndex === -1) {
+                return null;
+            }
+            return { index: crlfIndex, length: 4 };
         }
 
-        return {
-            index: match.index,
-            length: match[0].length,
-        };
+        if (crlfIndex === -1) {
+            return { index: lfIndex, length: 2 };
+        }
+
+        return lfIndex <= crlfIndex
+            ? { index: lfIndex, length: 2 }
+            : { index: crlfIndex, length: 4 };
     }
 
     _readEventData(rawEvent) {

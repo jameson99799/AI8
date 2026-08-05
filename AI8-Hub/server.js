@@ -440,12 +440,6 @@ app.post("/v1/chat/completions", asyncHandler(async (req, res) => {
         temperature: body.temperature,
     });
 
-    if (sessionPrompt.value) {
-        session = await client.updateSession(session, {
-            prompt: sessionPrompt.value,
-        });
-    }
-
     res.setHeader("x-ai8-session-id", String(session.id));
     res.setHeader("x-ai8-session-prompt-source", String(sessionPrompt.source || "none"));
     res.setHeader("x-ai8-session-prompt-present", sessionPrompt.value ? "true" : "false");
@@ -558,12 +552,6 @@ app.post("/v1/images/generations", asyncHandler(async (req, res) => {
         prompt: sessionPrompt.value,
         temperature: body.temperature,
     });
-
-    if (sessionPrompt.value) {
-        session = await client.updateSession(session, {
-            prompt: sessionPrompt.value,
-        });
-    }
 
     const abortController = new AbortController();
     req.on("close", () => abortController.abort());
@@ -1274,9 +1262,16 @@ async function normalizeContent(content, index, options = {}) {
     };
 }
 
+const jsonBodyParserCache = new Map();
+
 function dynamicJsonBodyParser(req, res, next) {
     const limit = getConfig().requestBodyLimit || "50mb";
-    return express.json({ limit })(req, res, next);
+    let parser = jsonBodyParserCache.get(limit);
+    if (!parser) {
+        parser = express.json({ limit });
+        jsonBodyParserCache.set(limit, parser);
+    }
+    return parser(req, res, next);
 }
 
 function requestLoggerMiddleware(req, res, next) {
@@ -1932,8 +1927,7 @@ async function simpleMultipartParser(req) {
  * Ensure image endpoints always provide a base64 version if clients require it.
  */
 async function resolveImagesToBase64(images) {
-    const resolved = [];
-    for (const img of images) {
+    const resolved = await Promise.all(images.map(async (img) => {
         if (img.url && img.url.startsWith("http")) {
             try {
                 const response = await fetch(img.url);
@@ -1941,19 +1935,18 @@ async function resolveImagesToBase64(images) {
                     const buffer = Buffer.from(await response.arrayBuffer());
                     const b64 = buffer.toString("base64");
                     const mime = response.headers.get("content-type") || "image/png";
-                    resolved.push({
+                    return {
                         ...img,
                         url: `data:${mime};base64,${b64}`,
                         original_url: img.url
-                    });
-                    continue;
+                    };
                 }
             } catch (err) {
                 logger.warn("Failed to fetch generated image to base64", { error: err.message, url: img.url });
             }
         }
-        resolved.push(img);
-    }
+        return img;
+    }));
     return resolved;
 }
 

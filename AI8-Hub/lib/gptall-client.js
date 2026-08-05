@@ -213,12 +213,13 @@ class GptAllClient {
                 buffer += decoder.decode(chunk, { stream: true });
 
                 for (;;) {
-                    const index = buffer.search(/\r?\n/);
+                    const index = buffer.indexOf("\n");
                     if (index === -1) {
                         break;
                     }
-                    const rawLine = buffer.slice(0, index);
-                    buffer = buffer.slice(index + (buffer[index] === "\r" && buffer[index + 1] === "\n" ? 2 : 1));
+                    const newlineLength = index > 0 && buffer[index - 1] === "\r" ? 2 : 1;
+                    const rawLine = buffer.slice(0, index + (newlineLength === 2 ? -1 : 0));
+                    buffer = buffer.slice(index + newlineLength);
                     lineNumber += 1;
                     processLine(rawLine);
                 }

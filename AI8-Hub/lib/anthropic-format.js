@@ -65,7 +65,7 @@ function anthropicToOpenAiRequest(body) {
             }
 
             if (msg.role === "assistant") {
-                const astMsg = { role: "assistant", content: normalizedContent || msg.content };
+                const astMsg = { role: "assistant", content: normalizedContent };
                 if (toolCalls) astMsg.tool_calls = toolCalls;
                 messages.push(astMsg);
             } else {
