@@ -75,8 +75,22 @@ async function fetchAggregatedModels(client, config, forceRefresh, logger, forAd
                 });
         });
 
+    const ai8Requested = config.ai8Enabled !== false;
+    const gptallRequested = config.gptallEnabled !== false && config.gptallAuthToken;
+
     // Run ai8, gptall and all custom channels in parallel.
-    const [ai8Models, gptallModels, ...customResults] = await Promise.all([...fetchTasks, ...customChannelTasks]);
+    // Resolve by index instead of positional destructuring so an absent gptall
+    // task cannot swallow the first custom-channel result (which is a
+    // `{ channel, models }` object, not an array).
+    const results = await Promise.all([...fetchTasks, ...customChannelTasks]);
+
+    let offset = 0;
+    const ai8Models = ai8Requested ? results[offset++] || [] : [];
+    let gptallModels = gptallRequested ? results[offset++] || [] : [];
+    const customResults = results.slice(offset);
+    if (!Array.isArray(gptallModels)) {
+        gptallModels = [];
+    }
 
     const allModels = [];
 
@@ -180,6 +194,7 @@ function isBlacklisted(requestModel, config, targetChannel) {
 async function resolveTargetChannel(requestModel, config, client, logger) {
     let actualModel = requestModel;
     let targetChannel = null;
+    let toolSupported = null;
 
     // 1. Explicitly matched by suffix
     const match = requestModel.match(/^(.*?)【(.*?)】$/);
@@ -189,13 +204,17 @@ async function resolveTargetChannel(requestModel, config, client, logger) {
         const customChannels = config.customChannels || [];
         targetChannel = customChannels.find(c => c.name === channelName && c.enabled);
         if (targetChannel) {
-            return { targetChannel, actualModel };
+            return { targetChannel, actualModel, toolSupported: null };
         }
         if (channelName === "AI8直连" || channelName === "ai8") {
-            return { targetChannel: null, actualModel };
+            return { targetChannel: null, actualModel, toolSupported: null };
         }
         if (channelName === "gpt-all" || channelName === "gptall") {
-            return { targetChannel: { protocol: "gptall", name: "gpt-all" }, actualModel };
+            return {
+                targetChannel: { protocol: "gptall", name: "gpt-all" },
+                actualModel,
+                toolSupported: lookupGptAllToolSupport(actualModel, requestModel),
+            };
         }
     }
     
@@ -211,6 +230,7 @@ async function resolveTargetChannel(requestModel, config, client, logger) {
         if (cached && cached._source === "gptall") {
             targetChannel = { protocol: "gptall", name: "gpt-all" };
             actualModel = cached._actualModel || requestModel;
+            toolSupported = cached._isToolSupported === true;
         } else if (cached && cached._source !== "ai8") {
             const customChannels = config.customChannels || [];
             targetChannel = customChannels.find(c => c.name === cached._source && c.enabled);
@@ -220,7 +240,15 @@ async function resolveTargetChannel(requestModel, config, client, logger) {
         }
     }
 
-    return { targetChannel, actualModel };
+    return { targetChannel, actualModel, toolSupported };
+}
+
+function lookupGptAllToolSupport(actualModel, requestModel) {
+    const cached = modelCache.models.find(m => m._source === "gptall" && (m.origId === actualModel || m.origId === requestModel));
+    if (!cached) {
+        return null;
+    }
+    return cached._isToolSupported === true;
 }
 
 async function proxyToCustomChannel(req, res, targetChannel, actualModel, body, buildErrorPayload, isNativeClaude = false) {

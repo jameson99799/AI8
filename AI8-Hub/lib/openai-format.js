@@ -52,11 +52,15 @@ function buildAdminModelsList(models) {
     }));
 }
 
-function buildChatCompletion({ content, created, id, images = [], metadata = null, model, usage }) {
+function buildChatCompletion({ content, created, id, images = [], metadata = null, model, toolCalls = null, usage }) {
     const message = {
         content: content || "",
         role: "assistant",
     };
+
+    if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+        message.tool_calls = toolCalls;
+    }
 
     if (Array.isArray(images) && images.length > 0) {
         message.ai8_images = images;
@@ -66,10 +70,12 @@ function buildChatCompletion({ content, created, id, images = [], metadata = nul
         message.ai8 = metadata;
     }
 
+    const finishReason = Array.isArray(toolCalls) && toolCalls.length > 0 ? "tool_calls" : "stop";
+
     return {
         choices: [
             {
-                finish_reason: "stop",
+                finish_reason: finishReason,
                 index: 0,
                 message,
             },

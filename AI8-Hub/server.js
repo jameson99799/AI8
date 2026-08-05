@@ -35,6 +35,7 @@ const {
     openAiToAnthropicResponse,
 } = require("./lib/anthropic-format");
 const { buildGptAllClient, fetchAggregatedModels, proxyToCustomChannel, resolveTargetChannel, isBlacklisted } = require("./lib/channel-manager");
+const toolMarker = require("./lib/tool-marker");
 
 const APP_NAME = "ai8-adapter";
 const STARTED_AT = new Date();
@@ -410,23 +411,35 @@ app.post("/v1/chat/completions", asyncHandler(async (req, res) => {
     }
     
     if (targetChannel?.protocol === "gptall") {
-        return handleGptAllChatCompletion(req, res, actualModel, body, config);
+        return handleGptAllChatCompletion(req, res, actualModel, body, config, resolved.toolSupported);
     }
 
     if (targetChannel) {
         return proxyToCustomChannel(req, res, targetChannel, actualModel, body, buildErrorPayload);
     }
 
-    if (Array.isArray(body.tools) && body.tools.length > 0) {
-        throw createHttpError(400, "Native AI8 adapter does not support tool calls yet. Please use a custom endpoint supporting tools.");
-    }
-
     const resolvedModel = await client.resolveModel(actualModel);
+    const requestedTools = Array.isArray(body.tools) ? body.tools.filter(Boolean) : [];
+    const toolSupported = resolvedModel?.attr?.capabilities?.tools === true;
+    if (requestedTools.length > 0 && !toolSupported) {
+        throw createHttpError(
+            400,
+            `Model "${actualModel}" does not support tool calls. Please use a tool-capable model (e.g. an OpenAI nano or Gemini Flash model).`
+        );
+    }
+    const toolMode = requestedTools.length > 0;
+
     const existingSessionId = null;
     const preparedMessages = await prepareMessages(body.messages, false, {
         injectSystemPromptOnReuse: config.ai8ReuseSessionInjectSystemPrompt,
         mediaFetchTimeoutMs: config.mediaFetchTimeoutMs,
     });
+    if (toolMode) {
+        const instruction = toolMarker.buildToolInstructionBlock(requestedTools);
+        if (instruction) {
+            preparedMessages.text = [preparedMessages.text, instruction].filter(Boolean).join("\n\n");
+        }
+    }
     const sessionPrompt = resolveSessionPrompt(body, preparedMessages);
     const created = Math.floor(Date.now() / 1000);
     const completionId = randomId("chatcmpl");
@@ -455,6 +468,7 @@ app.post("/v1/chat/completions", asyncHandler(async (req, res) => {
             sessionId: session.id,
             streamIncludeUsage: Boolean(body?.stream_options?.include_usage),
             thinking,
+            toolMode,
         });
         return;
     }
@@ -490,7 +504,15 @@ app.post("/v1/chat/completions", asyncHandler(async (req, res) => {
         res.setHeader("x-ai8-task-id", String(streamResult.taskId));
     }
 
-    const finalContent = resolveFinalContent(finalRecord || streamResult?.record, content);
+    let finalContent = resolveFinalContent(finalRecord || streamResult?.record, content);
+    let toolCalls = null;
+    if (toolMode) {
+        const parsed = toolMarker.parseToolCallsFromText(finalContent);
+        finalContent = parsed.text;
+        if (parsed.calls.length > 0) {
+            toolCalls = parsed.calls;
+        }
+    }
     const images = extractAi8Images(finalContent);
     if (images.length > 0) {
         res.setHeader("x-ai8-image-count", String(images.length));
@@ -508,6 +530,7 @@ app.post("/v1/chat/completions", asyncHandler(async (req, res) => {
                 taskId: streamResult?.taskId || null,
             }),
             model: resolvedModel.value,
+            toolCalls,
             usage: normalizeUsage(finalRecord || streamResult?.record),
         })
     );
@@ -746,10 +769,13 @@ async function handleStreamingChatCompletion(req, res, options) {
         sessionId,
         streamIncludeUsage,
         thinking,
+        toolMode = false,
     } = options;
 
     let finalRecord = null;
     let streamedContent = "";
+    const markerParser = toolMode ? toolMarker.createToolStreamParser() : null;
+    let toolCalls = [];
 
     res.status(200);
     res.setHeader("Cache-Control", "no-cache, no-transform");
@@ -786,6 +812,16 @@ async function handleStreamingChatCompletion(req, res, options) {
                     finalRecord = record;
                 },
                 onText(chunk) {
+                    if (markerParser) {
+                        const parsed = markerParser.processChunk(chunk);
+                        if (parsed.calls.length > 0) {
+                            toolCalls = toolCalls.concat(parsed.calls);
+                        }
+                        if (!parsed.text) {
+                            return;
+                        }
+                        chunk = parsed.text;
+                    }
                     streamedContent += chunk;
                     writeSse(
                         res,
@@ -812,7 +848,19 @@ async function handleStreamingChatCompletion(req, res, options) {
         throw error;
     }
 
-    const finalContent = resolveFinalContent(finalRecord, streamedContent);
+    let finalContent = resolveFinalContent(finalRecord, streamedContent);
+    if (markerParser) {
+        const parsed = toolMarker.parseToolCallsFromText(finalContent);
+        finalContent = parsed.text;
+        for (const call of parsed.calls) {
+            const alreadyEmitted = toolCalls.some(
+                existing => existing.function.name === call.function.name && existing.function.arguments === call.function.arguments
+            );
+            if (!alreadyEmitted) {
+                toolCalls.push(call);
+            }
+        }
+    }
     const finalDelta = computeStreamFinalDelta(streamedContent, finalContent);
     if (finalDelta) {
         streamedContent += finalDelta;
@@ -829,12 +877,26 @@ async function handleStreamingChatCompletion(req, res, options) {
         );
     }
 
+    if (toolCalls.length > 0) {
+        writeSse(
+            res,
+            buildChatCompletionChunk({
+                created,
+                delta: {
+                    tool_calls: toolCalls,
+                },
+                id: completionId,
+                model,
+            })
+        );
+    }
+
     writeSse(
         res,
         buildChatCompletionChunk({
             created,
             delta: {},
-            finishReason: "stop",
+            finishReason: toolCalls.length > 0 ? "tool_calls" : "stop",
             id: completionId,
             model,
         })
@@ -884,11 +946,15 @@ function getGptAllClient() {
     return gptallClientState.instance;
 }
 
-async function handleGptAllChatCompletion(req, res, model, body, config) {
+async function handleGptAllChatCompletion(req, res, model, body, config, resolvedToolSupported = null) {
     const gptallClient = getGptAllClient();
     const created = Math.floor(Date.now() / 1000);
     const completionId = randomId("chatcmpl");
     const requestModel = String(body.model || model || config.gptallDefaultModel || "").trim();
+
+    const requestedTools = Array.isArray(body.tools) ? body.tools.filter(Boolean) : [];
+    const toolSupported = requestedTools.length === 0 || resolvedToolSupported !== false;
+    const toolMode = requestedTools.length > 0 && toolSupported;
 
     const preparedMessages = await prepareMessages(body.messages, false, {
         mediaFetchTimeoutMs: config.mediaFetchTimeoutMs,
@@ -900,6 +966,12 @@ async function handleGptAllChatCompletion(req, res, model, body, config) {
         promptParts.push(`System prompt:\n${systemPrompt}`);
     }
     promptParts.push(preparedMessages.text);
+    if (toolMode) {
+        const instruction = toolMarker.buildToolInstructionBlock(requestedTools);
+        if (instruction) {
+            promptParts.push(instruction);
+        }
+    }
     const prompt = promptParts.filter(Boolean).join("\n\n");
 
     if (body.stream) {
@@ -908,6 +980,8 @@ async function handleGptAllChatCompletion(req, res, model, body, config) {
 
         let finalRecord = null;
         let streamedContent = "";
+        const markerParser = toolMode ? toolMarker.createToolStreamParser() : null;
+        let toolCalls = [];
 
         res.status(200);
         res.setHeader("Cache-Control", "no-cache, no-transform");
@@ -942,6 +1016,16 @@ async function handleGptAllChatCompletion(req, res, model, body, config) {
                         finalRecord = record;
                     },
                     onText(chunk) {
+                        if (markerParser) {
+                            const parsed = markerParser.processChunk(chunk);
+                            if (parsed.calls.length > 0) {
+                                toolCalls = toolCalls.concat(parsed.calls);
+                            }
+                            if (!parsed.text) {
+                                return;
+                            }
+                            chunk = parsed.text;
+                        }
                         streamedContent += chunk;
                         writeSse(
                             res,
@@ -975,11 +1059,31 @@ async function handleGptAllChatCompletion(req, res, model, body, config) {
             return;
         }
 
-        const finalContent = resolveFinalContent(finalRecord, streamedContent);
+        let finalContent = resolveFinalContent(finalRecord, streamedContent);
         if (!finalContent && !finalRecord) {
             writeSse(res, buildSseErrorEvent(new Error("gpt-all returned an empty response."), requestModel));
             res.end();
             return;
+        }
+        if (markerParser) {
+            const recordText =
+                typeof finalRecord?.text === "string" && finalRecord.text
+                    ? finalRecord.text
+                    : typeof finalRecord?.content === "string" && finalRecord.content
+                        ? finalRecord.content
+                        : "";
+            const parsed = toolMarker.parseToolCallsFromText(recordText || finalContent);
+            if (recordText) {
+                finalContent = parsed.text;
+            }
+            for (const call of parsed.calls) {
+                const alreadyEmitted = toolCalls.some(
+                    existing => existing.function.name === call.function.name && existing.function.arguments === call.function.arguments
+                );
+                if (!alreadyEmitted) {
+                    toolCalls.push(call);
+                }
+            }
         }
         const finalDelta = computeStreamFinalDelta(streamedContent, finalContent);
         if (finalDelta) {
@@ -997,12 +1101,26 @@ async function handleGptAllChatCompletion(req, res, model, body, config) {
             );
         }
 
+        if (toolCalls.length > 0) {
+            writeSse(
+                res,
+                buildChatCompletionChunk({
+                    created,
+                    delta: {
+                        tool_calls: toolCalls,
+                    },
+                    id: completionId,
+                    model: requestModel,
+                })
+            );
+        }
+
         writeSse(
             res,
             buildChatCompletionChunk({
                 created,
                 delta: {},
-                finishReason: "stop",
+                finishReason: toolCalls.length > 0 ? "tool_calls" : "stop",
                 id: completionId,
                 model: requestModel,
             })
@@ -1058,9 +1176,17 @@ async function handleGptAllChatCompletion(req, res, model, body, config) {
         throw createHttpError(502, failureInfo.message);
     }
 
-    const finalContent = resolveFinalContent(finalRecord, content);
+    let finalContent = resolveFinalContent(finalRecord, content);
     if (!finalContent && !finalRecord) {
         throw createHttpError(502, "gpt-all returned an empty response.");
+    }
+    let toolCalls = null;
+    if (toolMode) {
+        const parsed = toolMarker.parseToolCallsFromText(finalContent);
+        finalContent = parsed.text;
+        if (parsed.calls.length > 0) {
+            toolCalls = parsed.calls;
+        }
     }
     if (streamResult?.chatId) {
         res.setHeader("x-gptall-chat-id", String(streamResult.chatId));
@@ -1082,6 +1208,7 @@ async function handleGptAllChatCompletion(req, res, model, body, config) {
                 ...(streamResult?.groupId ? { gptall_group_id: streamResult.groupId } : {}),
             }),
             model: requestModel,
+            toolCalls,
             usage: normalizeUsage({ useTokens: finalRecord?.totalTokens }),
         })
     );
@@ -1212,6 +1339,13 @@ async function normalizeContent(content, index, options = {}) {
         return {
             files: [],
             text: content.trim(),
+        };
+    }
+
+    if (content === null || content === undefined) {
+        return {
+            files: [],
+            text: "",
         };
     }
 
