@@ -437,7 +437,12 @@ app.post("/v1/chat/completions", asyncHandler(async (req, res) => {
     if (toolMode) {
         const instruction = toolMarker.buildToolInstructionBlock(requestedTools);
         if (instruction) {
-            preparedMessages.text = [preparedMessages.text, instruction].filter(Boolean).join("\n\n");
+            const parts = [preparedMessages.text, instruction];
+            const hasToolResults = Array.isArray(body.messages) && body.messages.some(message => message?.role === "tool");
+            if (hasToolResults) {
+                parts.push("此前工具调用的结果已经包含在对话历史中，请直接依据这些结果回答用户，不要重复调用已经执行过的工具。");
+            }
+            preparedMessages.text = parts.filter(Boolean).join("\n\n");
         }
     }
     const sessionPrompt = resolveSessionPrompt(body, preparedMessages);
@@ -970,6 +975,10 @@ async function handleGptAllChatCompletion(req, res, model, body, config, resolve
         const instruction = toolMarker.buildToolInstructionBlock(requestedTools);
         if (instruction) {
             promptParts.push(instruction);
+            const hasToolResults = Array.isArray(body.messages) && body.messages.some(message => message?.role === "tool");
+            if (hasToolResults) {
+                promptParts.push("此前工具调用的结果已经包含在对话历史中，请直接依据这些结果回答用户，不要重复调用已经执行过的工具。");
+            }
         }
     }
     const prompt = promptParts.filter(Boolean).join("\n\n");
