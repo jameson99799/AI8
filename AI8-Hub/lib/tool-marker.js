@@ -216,6 +216,13 @@ function parseGlamDialect(text, indexRef) {
 
 // State machine ports of the ouyi ToolCallParser. States:
 //   "normal" -> "tag" (after '<') -> "injson" (after a start tag matched) -> "close" (after '<' inside json)
+//
+// Safety valve: a marker that opens but never closes (truncated model output)
+// must not swallow the rest of the stream. If the buffered json grows past
+// MAX_JSON_BUFFER characters without a closing tag, the buffer is flushed as
+// plain text and parsing resets.
+const MAX_JSON_BUFFER = 20000;
+
 class ToolMarkerParser {
     constructor() {
         this.state = "normal";
@@ -260,6 +267,11 @@ class ToolMarkerParser {
                         this.state = "close";
                     } else {
                         this.jsonBuf += rawChar;
+                        if (this.jsonBuf.length > MAX_JSON_BUFFER) {
+                            normalText += this.jsonBuf;
+                            this.jsonBuf = "";
+                            this.state = "normal";
+                        }
                     }
                     break;
                 }
@@ -277,6 +289,11 @@ class ToolMarkerParser {
                         this.jsonBuf += this.tagBuf;
                         this.tagBuf = "";
                         this.state = "injson";
+                        if (this.jsonBuf.length > MAX_JSON_BUFFER) {
+                            normalText += this.jsonBuf;
+                            this.jsonBuf = "";
+                            this.state = "normal";
+                        }
                     }
                     break;
                 }

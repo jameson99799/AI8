@@ -422,12 +422,12 @@ app.post("/v1/chat/completions", asyncHandler(async (req, res) => {
     const requestedTools = Array.isArray(body.tools) ? body.tools.filter(Boolean) : [];
     const toolSupported = resolvedModel?.attr?.capabilities?.tools === true;
     if (requestedTools.length > 0 && !toolSupported) {
-        throw createHttpError(
-            400,
-            `Model "${actualModel}" does not support tool calls. Please use a tool-capable model (e.g. an OpenAI nano or Gemini Flash model).`
-        );
+        logger.info("Ignoring tools for non-tool model", {
+            model: actualModel,
+            toolCount: requestedTools.length,
+        });
     }
-    const toolMode = requestedTools.length > 0;
+    const toolMode = requestedTools.length > 0 && toolSupported;
 
     const existingSessionId = null;
     const preparedMessages = await prepareMessages(body.messages, false, {
@@ -958,7 +958,7 @@ async function handleGptAllChatCompletion(req, res, model, body, config, resolve
     const requestModel = String(body.model || model || config.gptallDefaultModel || "").trim();
 
     const requestedTools = Array.isArray(body.tools) ? body.tools.filter(Boolean) : [];
-    const toolSupported = requestedTools.length === 0 || resolvedToolSupported !== false;
+    const toolSupported = resolvedToolSupported === true;
     const toolMode = requestedTools.length > 0 && toolSupported;
 
     const preparedMessages = await prepareMessages(body.messages, false, {

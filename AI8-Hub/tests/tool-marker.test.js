@@ -175,6 +175,19 @@ test("parseToolCallsFromText returns passthrough when no markers", () => {
     assert.equal(result.calls.length, 0);
 });
 
+test("streaming parser flushes unclosed marker buffer instead of swallowing the stream", () => {
+    const parser = createToolStreamParser();
+    const opening = "<|tool_calls_begin|>";
+    const filler = "正文内容，模型其实没有输出工具调用而是直接回答。".repeat(1200);
+    const tail = "剩下的回复内容";
+    const result = parser.processChunk(`${opening}${filler}${tail}`);
+
+    assert.ok(result.text.length > 10000, `expected text flush, got ${result.text.length} chars`);
+    assert.ok(result.text.includes("正文内容"), "buffered text should be flushed as-is");
+    assert.ok(result.text.endsWith(tail), "stream tail should not be swallowed");
+    assert.equal(result.calls.length, 0);
+});
+
 test("stripToolMarkers removes markers but keeps surrounding text", () => {
     const text = stripToolMarkers(
         '<|tool_calls_begin|>[{"name":"a","arguments":{}}]<|tool_calls_end|>正文'
