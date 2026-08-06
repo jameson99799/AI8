@@ -129,6 +129,7 @@ app.put("/admin/api/config", requireAdminAuth, (req, res) => {
     const nextConfig = configStore.updateConfig(patch);
 
     invalidateClient();
+    setImmediate(prewarmCaches);
     announceAdminAccess("config_update");
 
     logger.info("Runtime config updated", {
@@ -800,6 +801,7 @@ app.listen(port, "0.0.0.0", () => {
         bind: `0.0.0.0:${port}`,
         port,
     });
+    prewarmCaches();
 });
 
 async function handleStreamingChatCompletion(req, res, options) {
@@ -828,6 +830,9 @@ async function handleStreamingChatCompletion(req, res, options) {
     res.setHeader("Cache-Control", "no-cache, no-transform");
     res.setHeader("Connection", "keep-alive");
     res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+    if (typeof res.socket?.setNoDelay === "function") {
+        res.socket.setNoDelay(true);
+    }
     if (typeof res.flushHeaders === "function") {
         res.flushHeaders();
     }
@@ -1689,6 +1694,28 @@ function getClient(options = {}) {
 function invalidateClient() {
     clientState.instance = null;
     clientState.signature = "";
+}
+
+function prewarmCaches() {
+    try {
+        const config = getConfig();
+        if (!config.ai8AuthToken) {
+            return;
+        }
+        const client = getClient();
+        Promise.allSettled([
+            fetchAggregatedModels(client, config, false, logger, false),
+            client.fetchTemplate().catch(() => null),
+        ]).then(results => {
+            results.forEach(result => {
+                if (result.status === "rejected" && logger) {
+                    logger.warn("Cache prewarm failed", { error: String(result.reason) });
+                }
+            });
+        });
+    } catch (error) {
+        if (logger) logger.warn("Cache prewarm skipped", { error: String(error) });
+    }
 }
 
 function announceAdminAccess(reason) {
