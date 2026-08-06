@@ -131,7 +131,10 @@ function openAiToAnthropicChunk(openaiChunk, state = {}) {
     const events = [];
     
     if (delta) {
-        if (delta.reasoning_content) {
+        const reasoning = typeof delta.reasoning_content === "string" && delta.reasoning_content
+            ? delta.reasoning_content
+            : (typeof delta.reasoning === "string" && delta.reasoning ? delta.reasoning : "");
+        if (reasoning) {
             if (!state.inThink) {
                 state.inThink = true;
                 events.push({
@@ -143,7 +146,7 @@ function openAiToAnthropicChunk(openaiChunk, state = {}) {
             events.push({
                 type: "content_block_delta",
                 index: state.currentIndex,
-                delta: { type: "thinking_delta", thinking: delta.reasoning_content }
+                delta: { type: "thinking_delta", thinking: reasoning }
             });
         }
         
@@ -213,6 +216,50 @@ function openAiToAnthropicChunk(openaiChunk, state = {}) {
         }
     }
     
+    const msgReasoning =
+        typeof choice.message?.reasoning_content === "string" && choice.message.reasoning_content
+            ? choice.message.reasoning_content
+            : (typeof choice.message?.reasoning === "string" && choice.message.reasoning ? choice.message.reasoning : "");
+    if (msgReasoning && !state.inThink) {
+        state.inThink = true;
+        events.push({
+            type: "content_block_start",
+            index: state.currentIndex,
+            content_block: { type: "thinking", signature: "ai8_internal", thinking: "" }
+        });
+        events.push({
+            type: "content_block_delta",
+            index: state.currentIndex,
+            delta: { type: "thinking_delta", thinking: msgReasoning }
+        });
+    }
+
+    const msgContent = typeof choice.message?.content === "string" ? choice.message.content : "";
+    if (msgContent && !state.hasStartedText) {
+        if (state.inThink) {
+            events.push({
+                type: "content_block_delta",
+                index: state.currentIndex,
+                delta: { type: "signature_delta", signature: "ai8_sign" }
+            });
+            events.push({ type: "content_block_stop", index: state.currentIndex });
+            state.inThink = false;
+            state.currentIndex++;
+        }
+        state.hasStartedText = true;
+        events.push({
+            type: "content_block_start",
+            index: state.currentIndex,
+            content_block: { type: "text", text: "" }
+        });
+        const deltaText = choice.message.content;
+        events.push({
+            type: "content_block_delta",
+            index: state.currentIndex,
+            delta: { type: "text_delta", text: deltaText }
+        });
+    }
+
     if (choice.finish_reason) {
         if (state.inThink) {
             events.push({
@@ -256,10 +303,11 @@ function openAiToAnthropicResponse(openaiRes) {
     const message = choice.message || {};
     const contentArr = [];
     
-    if (message.reasoning_content) {
+    const reasoning = message.reasoning_content || message.reasoning;
+    if (reasoning) {
         contentArr.push({
             type: "thinking",
-            thinking: message.reasoning_content,
+            thinking: reasoning,
             signature: "ai8_internal"
         });
     }

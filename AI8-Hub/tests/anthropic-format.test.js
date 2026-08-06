@@ -3,7 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { anthropicToOpenAiRequest } = require("../lib/anthropic-format");
+const { anthropicToOpenAiRequest, openAiToAnthropicChunk, openAiToAnthropicResponse } = require("../lib/anthropic-format");
 
 test("tool_use is converted to assistant tool_calls, never leaked into content", () => {
     const result = anthropicToOpenAiRequest({
@@ -118,4 +118,61 @@ test("no thinking field leaves metadata untouched", () => {
         messages: [{ role: "user", content: "hi" }],
     });
     assert.equal(result.metadata, undefined);
+});
+
+test("streaming reasoning field (NVIDIA NIM) is converted to thinking block", () => {
+    const state = { inThink: false, hasStartedText: false, currentIndex: 0 };
+    const events = openAiToAnthropicChunk({
+        model: "stepfun-ai/step-3.7-flash",
+        choices: [{ index: 0, delta: { role: "assistant", reasoning: "让我想想" } }],
+    }, state);
+
+    assert.ok(Array.isArray(events));
+    const start = events.find(e => e.type === "content_block_start");
+    assert.ok(start, "content_block_start emitted");
+    assert.equal(start.content_block.type, "thinking");
+    const delta = events.find(e => e.type === "content_block_delta" && e.delta.type === "thinking_delta");
+    assert.ok(delta, "thinking_delta emitted");
+    assert.equal(delta.delta.thinking, "让我想想");
+    assert.equal(state.inThink, true);
+});
+
+test("streaming reasoning_content field is honored too", () => {
+    const state = { inThink: false, hasStartedText: false, currentIndex: 0 };
+    const events = openAiToAnthropicChunk({
+        model: "m",
+        choices: [{ index: 0, delta: { reasoning_content: "推理A" } }],
+    }, state);
+    const delta = events.find(e => e.type === "content_block_delta" && e.delta.type === "thinking_delta");
+    assert.equal(delta.delta.thinking, "推理A");
+});
+
+test("final chunk message reasoning is applied when delta carried no reasoning", () => {
+    const state = { inThink: false, hasStartedText: false, currentIndex: 0 };
+    openAiToAnthropicChunk({
+        model: "m",
+        choices: [{ index: 0, delta: { role: "assistant" } }],
+    }, state);
+
+    const events = openAiToAnthropicChunk({
+        choices: [{ index: 0, delta: {}, message: { reasoning: "完整思考", content: "正文来了" }, finish_reason: "stop" }],
+    }, state);
+
+    const thinkingDelta = events.find(e => e.type === "content_block_delta" && e.delta.type === "thinking_delta");
+    assert.ok(thinkingDelta, "thinking_delta emitted from message.reasoning");
+    assert.equal(thinkingDelta.delta.thinking, "完整思考");
+    const textDelta = events.find(e => e.type === "content_block_delta" && e.delta.type === "text_delta");
+    assert.ok(textDelta, "text_delta emitted from message.content");
+    assert.equal(textDelta.delta.text, "正文来了");
+});
+
+test("non-streaming reasoning field (NVIDIA NIM) becomes a thinking block", () => {
+    const converted = openAiToAnthropicResponse({
+        model: "m",
+        choices: [{ index: 0, message: { role: "assistant", reasoning: "思考内容", content: "回答内容" }, finish_reason: "stop" }],
+    });
+    assert.equal(converted.content[0].type, "thinking");
+    assert.equal(converted.content[0].thinking, "思考内容");
+    assert.equal(converted.content[1].type, "text");
+    assert.equal(converted.content[1].text, "回答内容");
 });
