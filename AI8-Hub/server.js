@@ -459,6 +459,12 @@ app.post("/v1/chat/completions", asyncHandler(async (req, res) => {
         temperature: body.temperature,
     });
 
+    if (sessionPrompt.value) {
+        session = await client.updateSession(session, {
+            prompt: sessionPrompt.value,
+        });
+    }
+
     res.setHeader("x-ai8-session-id", String(session.id));
     res.setHeader("x-ai8-session-prompt-source", String(sessionPrompt.source || "none"));
     res.setHeader("x-ai8-session-prompt-present", sessionPrompt.value ? "true" : "false");
@@ -587,6 +593,12 @@ app.post("/v1/images/generations", asyncHandler(async (req, res) => {
         prompt: sessionPrompt.value,
         temperature: body.temperature,
     });
+
+    if (sessionPrompt.value) {
+        session = await client.updateSession(session, {
+            prompt: sessionPrompt.value,
+        });
+    }
 
     const abortController = new AbortController();
     req.on("close", () => abortController.abort());
