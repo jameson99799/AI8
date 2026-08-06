@@ -329,92 +329,94 @@ app.post("/v1/messages", asyncHandler(async (req, res) => {
         return proxyToCustomChannel(req, res, targetChannel, resolved.actualModel, body, buildErrorPayload, true);
     }
 
-    // Anthropic to OpenAI forwarder
+    // Anthropic to OpenAI forwarder. The transformed request is handed
+    // directly to the chat/completions handler instead of re-entering the
+    // Express middleware stack (req.app.handle), which would re-run
+    // compression, body parsing and request logging for every request.
     const openaiBody = anthropicToOpenAiRequest(req.body);
-    req.body = openaiBody;
     
-    // We rewrite the URL to internally route to chat/completions
-    req.url = "/v1/chat/completions";
-    req.originalUrl = req.url;
-    
-    // For non-streaming, we intercept res.json
     if (!openaiBody.stream) {
         const originalJson = res.json.bind(res);
         res.json = function(data) {
             return originalJson(openAiToAnthropicResponse(data));
         };
     } else {
-        // For streaming, we insert our transform stream
-        // This relies on writeSse or pipe(res) writing full SSE events to res.
-        // We will intercept write() calls.
-        const originalWrite = res.write.bind(res);
-        let isInitial = true;
-        let buf = "";
-        let streamState = { inThink: false };
-        res.write = function(chunk) {
-            if (res.statusCode !== 200) {
-                return originalWrite(chunk);
-            }
-            const chunkStr = typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
-            buf += chunkStr;
-            const lines = buf.split(/\r?\n\r?\n/);
-            buf = lines.pop(); // keep last incomplete
-            
-            let anthropicStream = "";
-            for (const block of lines) {
-                if (block.startsWith("data: ")) {
-                    const data = block.slice(6).trim();
-                    if (data === "[DONE]") {
-                        anthropicStream += "event: message_stop\ndata: {\"type\": \"message_stop\"}\n\n";
-                        continue;
-                    }
-                    try {
-                        const parsed = JSON.parse(data);
-                        const converted = openAiToAnthropicChunk(parsed, streamState);
-                        if (isInitial) {
-                            const anthroModel = parsed.model || "unknown";
-                            anthropicStream += `event: message_start\ndata: {"type":"message_start","message":{"id":"msg_${Date.now()}","type":"message","role":"assistant","content":[],"model":"${anthroModel}","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":0,"output_tokens":0}}}\n\n`;
-                            isInitial = false;
-                        }
-                        if (converted) {
-                            if (Array.isArray(converted)) {
-                                for(const item of converted) anthropicStream += `event: ${item.type}\ndata: ${JSON.stringify(item)}\n\n`;
-                            } else {
-                                anthropicStream += `event: ${converted.type}\ndata: ${JSON.stringify(converted)}\n\n`;
-                            }
-                        }
-                    } catch(e) {}
-                }
-            }
-            if (anthropicStream) {
-                return originalWrite(anthropicStream);
-            }
-        };
-
-        const originalEnd = res.end.bind(res);
-        res.end = function(chunk, encoding, callback) {
-            if (res.statusCode !== 200) {
-                return originalEnd(chunk, encoding, callback);
-            }
-            if (chunk && typeof chunk !== "function") {
-                const chunkStr = typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
-                buf += chunkStr;
-            }
-            if (buf.trim().length > 0) {
-                if (buf.includes("[DONE]")) {
-                    originalWrite("event: message_stop\ndata: {\"type\": \"message_stop\"}\n\n");
-                }
-            }
-            originalEnd(callback);
-        };
+        wrapAnthropicStreamResponse(res);
     }
-    
-    // Pass control to the chat/completions handler
-    req.app.handle(req, res);
+
+    await handleChatCompletion(req, res, openaiBody);
 }));
 
+/**
+ * Intercept SSE writes produced by the OpenAI chat handler and translate them
+ * into the Anthropic Messages stream protocol.
+ */
+function wrapAnthropicStreamResponse(res) {
+    const originalWrite = res.write.bind(res);
+    let isInitial = true;
+    let buf = "";
+    let streamState = { inThink: false };
+    res.write = function(chunk) {
+        if (res.statusCode !== 200) {
+            return originalWrite(chunk);
+        }
+        const chunkStr = typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
+        buf += chunkStr;
+        const lines = buf.split(/\r?\n\r?\n/);
+        buf = lines.pop(); // keep last incomplete
+        
+        let anthropicStream = "";
+        for (const block of lines) {
+            if (block.startsWith("data: ")) {
+                const data = block.slice(6).trim();
+                if (data === "[DONE]") {
+                    anthropicStream += "event: message_stop\ndata: {\"type\": \"message_stop\"}\n\n";
+                    continue;
+                }
+                try {
+                    const parsed = JSON.parse(data);
+                    const converted = openAiToAnthropicChunk(parsed, streamState);
+                    if (isInitial) {
+                        const anthroModel = parsed.model || "unknown";
+                        anthropicStream += `event: message_start\ndata: {"type":"message_start","message":{"id":"msg_${Date.now()}","type":"message","role":"assistant","content":[],"model":"${anthroModel}","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":0,"output_tokens":0}}}\n\n`;
+                        isInitial = false;
+                    }
+                    if (converted) {
+                        if (Array.isArray(converted)) {
+                            for(const item of converted) anthropicStream += `event: ${item.type}\ndata: ${JSON.stringify(item)}\n\n`;
+                        } else {
+                            anthropicStream += `event: ${converted.type}\ndata: ${JSON.stringify(converted)}\n\n`;
+                        }
+                    }
+                } catch(e) {}
+            }
+        }
+        if (anthropicStream) {
+            return originalWrite(anthropicStream);
+        }
+    };
+
+    const originalEnd = res.end.bind(res);
+    res.end = function(chunk, encoding, callback) {
+        if (res.statusCode !== 200) {
+            return originalEnd(chunk, encoding, callback);
+        }
+        if (chunk && typeof chunk !== "function") {
+            const chunkStr = typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
+            buf += chunkStr;
+        }
+        if (buf.trim().length > 0 && buf.includes("[DONE]")) {
+            originalWrite("event: message_stop\ndata: {\"type\": \"message_stop\"}\n\n");
+        }
+        originalEnd(chunk, encoding, callback);
+    };
+}
+
 app.post("/v1/chat/completions", asyncHandler(async (req, res) => {
-    const body = req.body || {};
+    await handleChatCompletion(req, res, req.body && typeof req.body === "object" ? req.body : {});
+}));
+
+async function handleChatCompletion(req, res, body) {
     const config = getConfig();
     const client = getClient();
 
@@ -514,71 +516,77 @@ app.post("/v1/chat/completions", asyncHandler(async (req, res) => {
     let finalRecord = null;
     let reasoningContent = "";
 
-    const streamResult = await client.streamChatCompletion(
-        {
-            files: preparedMessages.files,
-            sessionId: session.id,
-            signal: abortController.signal,
-            text: preparedMessages.text,
-            thinking,
-            timeoutMs: STREAM_TIMEOUT_MS,
-        },
-        {
-            onObject(record) {
-                finalRecord = record;
-                if (typeof record?.aiText === "string" && record.aiText) {
-                    content = record.aiText;
-                }
-            },
-            onReasoning(chunk) {
-                reasoningContent += chunk;
-            },
-            onText(chunk) {
-                content += chunk;
-            },
-        }
-    );
-
-    if (streamResult?.taskId) {
-        res.setHeader("x-ai8-task-id", String(streamResult.taskId));
-    }
-
-    let finalContent = resolveFinalContent(finalRecord || streamResult?.record, content);
-    let toolCalls = null;
-    if (toolMode) {
-        const parsed = toolMarker.parseToolCallsFromText(finalContent);
-        finalContent = parsed.text;
-        if (parsed.calls.length > 0) {
-            toolCalls = parsed.calls;
-        }
-    }
-    const images = extractAi8Images(finalContent);
-    if (images.length > 0) {
-        res.setHeader("x-ai8-image-count", String(images.length));
-    }
-
-    res.json(
-        buildChatCompletion({
-            content: finalContent,
-            created,
-            id: completionId,
-            images,
-            metadata: buildAi8Metadata({
-                imageCount: images.length,
+    try {
+        const streamResult = await client.streamChatCompletion(
+            {
+                files: preparedMessages.files,
                 sessionId: session.id,
-                taskId: streamResult?.taskId || null,
-            }),
-            model: resolvedModel.value,
-            reasoningContent: reasoningContent || finalRecord?.reasoning_content || null,
-            toolCalls,
-            usage: normalizeUsage(finalRecord || streamResult?.record),
-        })
-    );
+                signal: abortController.signal,
+                text: preparedMessages.text,
+                thinking,
+                timeoutMs: STREAM_TIMEOUT_MS,
+            },
+            {
+                onObject(record) {
+                    finalRecord = record;
+                    if (typeof record?.aiText === "string" && record.aiText) {
+                        content = record.aiText;
+                    }
+                },
+                onReasoning(chunk) {
+                    reasoningContent += chunk;
+                },
+                onText(chunk) {
+                    content += chunk;
+                },
+            }
+        );
 
-    if (config.ai8DeleteSessionAfterResponse && isEphemeralSession) {
-        scheduleSessionDeletion(client, session.id, "non_stream_response");
+        if (streamResult?.taskId) {
+            res.setHeader("x-ai8-task-id", String(streamResult.taskId));
+        }
+
+        let finalContent = resolveFinalContent(finalRecord || streamResult?.record, content);
+        let toolCalls = null;
+        if (toolMode) {
+            const parsed = toolMarker.parseToolCallsFromText(finalContent);
+            finalContent = parsed.text;
+            if (parsed.calls.length > 0) {
+                toolCalls = parsed.calls;
+            }
+        }
+        const images = extractAi8Images(finalContent);
+        if (images.length > 0) {
+            res.setHeader("x-ai8-image-count", String(images.length));
+        }
+
+        res.json(
+            buildChatCompletion({
+                content: finalContent,
+                created,
+                id: completionId,
+                images,
+                metadata: buildAi8Metadata({
+                    imageCount: images.length,
+                    sessionId: session.id,
+                    taskId: streamResult?.taskId || null,
+                }),
+                model: resolvedModel.value,
+                reasoningContent: reasoningContent || finalRecord?.reasoning_content || null,
+                toolCalls,
+                usage: normalizeUsage(finalRecord || streamResult?.record),
+            })
+        );
+    } finally {
+        if (config.ai8DeleteSessionAfterResponse && isEphemeralSession) {
+            scheduleSessionDeletion(
+                client,
+                session.id,
+                abortController.signal.aborted ? "non_stream_abort" : "non_stream_response"
+            );
+        }
     }
-}));
+}
 
 app.post("/v1/images/generations", asyncHandler(async (req, res) => {
     const body = req.body || {};
@@ -628,35 +636,41 @@ app.post("/v1/images/generations", asyncHandler(async (req, res) => {
     let content = "";
     let finalRecord = null;
 
-    const streamResult = await client.streamChatCompletion(
-        {
-            files: preparedMessages.files,
-            sessionId: session.id,
-            signal: abortController.signal,
-            text: preparedMessages.text,
-            timeoutMs: STREAM_TIMEOUT_MS,
-        },
-        {
-            onObject(record) {
-                finalRecord = record;
-                if (typeof record?.aiText === "string" && record.aiText) {
-                    content = record.aiText;
-                }
+    try {
+        const streamResult = await client.streamChatCompletion(
+            {
+                files: preparedMessages.files,
+                sessionId: session.id,
+                signal: abortController.signal,
+                text: preparedMessages.text,
+                timeoutMs: STREAM_TIMEOUT_MS,
             },
-            onText(chunk) {
-                content += chunk;
-            },
+            {
+                onObject(record) {
+                    finalRecord = record;
+                    if (typeof record?.aiText === "string" && record.aiText) {
+                        content = record.aiText;
+                    }
+                },
+                onText(chunk) {
+                    content += chunk;
+                },
+            }
+        );
+
+        const finalContent = resolveFinalContent(finalRecord || streamResult?.record, content);
+        let images = extractAi8Images(finalContent);
+        images = await resolveImagesToBase64(images, { timeoutMs: config.mediaFetchTimeoutMs });
+
+        res.json(buildImageGeneration({ created, images }));
+    } finally {
+        if (config.ai8DeleteSessionAfterResponse) {
+            scheduleSessionDeletion(
+                client,
+                session.id,
+                abortController.signal.aborted ? "image_generation_abort" : "image_generation"
+            );
         }
-    );
-
-    const finalContent = resolveFinalContent(finalRecord || streamResult?.record, content);
-    let images = extractAi8Images(finalContent);
-    images = await resolveImagesToBase64(images);
-
-    res.json(buildImageGeneration({ created, images }));
-
-    if (config.ai8DeleteSessionAfterResponse) {
-        scheduleSessionDeletion(client, session.id, "image_generation");
     }
 }));
 
@@ -731,35 +745,41 @@ app.post("/v1/images/edits", asyncHandler(async (req, res) => {
     let content = "";
     let finalRecord = null;
 
-    const streamResult = await client.streamChatCompletion(
-        {
-            files: preparedMessages.files,
-            sessionId: session.id,
-            signal: abortController.signal,
-            text: preparedMessages.text,
-            timeoutMs: STREAM_TIMEOUT_MS,
-        },
-        {
-            onObject(record) {
-                finalRecord = record;
-                if (typeof record?.aiText === "string" && record.aiText) {
-                    content = record.aiText;
-                }
+    try {
+        const streamResult = await client.streamChatCompletion(
+            {
+                files: preparedMessages.files,
+                sessionId: session.id,
+                signal: abortController.signal,
+                text: preparedMessages.text,
+                timeoutMs: STREAM_TIMEOUT_MS,
             },
-            onText(chunk) {
-                content += chunk;
-            },
+            {
+                onObject(record) {
+                    finalRecord = record;
+                    if (typeof record?.aiText === "string" && record.aiText) {
+                        content = record.aiText;
+                    }
+                },
+                onText(chunk) {
+                    content += chunk;
+                },
+            }
+        );
+
+        const finalContent = resolveFinalContent(finalRecord || streamResult?.record, content);
+        let images = extractAi8Images(finalContent);
+        images = await resolveImagesToBase64(images, { timeoutMs: config.mediaFetchTimeoutMs });
+
+        res.json(buildImageGeneration({ created, images }));
+    } finally {
+        if (config.ai8DeleteSessionAfterResponse) {
+            scheduleSessionDeletion(
+                client,
+                session.id,
+                abortController.signal.aborted ? "image_edit_abort" : "image_edit"
+            );
         }
-    );
-
-    const finalContent = resolveFinalContent(finalRecord || streamResult?.record, content);
-    let images = extractAi8Images(finalContent);
-    images = await resolveImagesToBase64(images);
-
-    res.json(buildImageGeneration({ created, images }));
-
-    if (config.ai8DeleteSessionAfterResponse) {
-        scheduleSessionDeletion(client, session.id, "image_edit");
     }
 }));
 
@@ -906,6 +926,14 @@ async function handleStreamingChatCompletion(req, res, options) {
 
         finalRecord = finalRecord || streamResult?.record || null;
     } catch (error) {
+        if (deleteSessionAfterResponse) {
+            scheduleSessionDeletion(
+                client,
+                sessionId,
+                abortController.signal.aborted ? "stream_abort" : "stream_error"
+            );
+        }
+
         if (abortController.signal.aborted) {
             res.end();
             return;
@@ -2178,11 +2206,14 @@ async function simpleMultipartParser(req) {
 /**
  * Ensure image endpoints always provide a base64 version if clients require it.
  */
-async function resolveImagesToBase64(images) {
+async function resolveImagesToBase64(images, options = {}) {
+    const timeoutMs = Number.isFinite(Number(options.timeoutMs)) ? Number(options.timeoutMs) : 60000;
     const resolved = await Promise.all(images.map(async (img) => {
         if (img.url && img.url.startsWith("http")) {
+            const abortController = new AbortController();
+            const timeout = setTimeout(() => abortController.abort(), timeoutMs);
             try {
-                const response = await fetch(img.url);
+                const response = await fetch(img.url, { signal: abortController.signal });
                 if (response.ok) {
                     const buffer = Buffer.from(await response.arrayBuffer());
                     const b64 = buffer.toString("base64");
@@ -2195,6 +2226,8 @@ async function resolveImagesToBase64(images) {
                 }
             } catch (err) {
                 logger.warn("Failed to fetch generated image to base64", { error: err.message, url: img.url });
+            } finally {
+                clearTimeout(timeout);
             }
         }
         return img;
