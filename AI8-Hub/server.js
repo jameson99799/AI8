@@ -5,6 +5,7 @@ const path = require("path");
 require("dotenv").config({ path: path.resolve(__dirname, ".env") });
 
 const express = require("express");
+const compression = require("compression");
 
 const packageJson = require("./package.json");
 const AI8Client = require("./lib/ai8-client");
@@ -36,6 +37,7 @@ const {
 } = require("./lib/anthropic-format");
 const { buildGptAllClient, fetchAggregatedModels, proxyToCustomChannel, resolveTargetChannel, isBlacklisted } = require("./lib/channel-manager");
 const toolMarker = require("./lib/tool-marker");
+const { initHttpPool } = require("./lib/http-pool");
 
 const APP_NAME = "ai8-adapter";
 const STARTED_AT = new Date();
@@ -67,6 +69,18 @@ announceAdminAccess("startup");
 const app = express();
 app.disable("x-powered-by");
 
+initHttpPool();
+
+app.use(compression({
+    threshold: 1024,
+    filter(req, res) {
+        const contentType = String(res.getHeader("Content-Type") || res.getHeader("content-type") || "");
+        if (contentType.startsWith("text/event-stream")) {
+            return false;
+        }
+        return compression.filter(req, res);
+    },
+}));
 app.use(dynamicJsonBodyParser);
 app.use(requestLoggerMiddleware);
 
@@ -1469,8 +1483,14 @@ function requestLoggerMiddleware(req, res, next) {
             return;
         }
 
+        const durationMs = Date.now() - startedAt;
+        const threshold = getConfig().logSlowThresholdMs;
+        if (threshold > 0 && durationMs < threshold && res.statusCode < 400) {
+            return;
+        }
+
         logger.info("HTTP request", {
-            duration_ms: Date.now() - startedAt,
+            duration_ms: durationMs,
             ip: extractRequestIp(req),
             method: req.method,
             path: req.originalUrl,
