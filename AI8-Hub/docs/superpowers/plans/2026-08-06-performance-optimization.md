@@ -1,6 +1,6 @@
 # AI8-Hub Performance Optimization Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Add incremental low-risk performance optimizations to AI8-Hub (upstream connection pooling, response compression, cache pre-warm, SSE parser micro-optimization, TCP_NODELAY, request log throttling) without changing any existing API/behavior.
 
@@ -30,12 +30,12 @@
 - Consumes: nothing (self-contained), `process.env.HTTP_POOL_CONNECTIONS`, `process.env.HTTP_KEEPALIVE_TIMEOUT`, `process.env.HTTP_CONNECT_TIMEOUT`
 - Produces: `lib/http-pool.js` exports `function initHttpPool()` that installs a global undici dispatcher and returns the Agent instance.
 
-- [ ] **Step 1: Install dependencies**
+- [x] **Step 1: Install dependencies**
 
 Run: `npm install undici compression`
 Expected: `package.json` gains `"undici": "^7.x"` and `"compression": "^1.x"` under `dependencies`.
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 Create `tests/http-pool.test.js`:
 
@@ -70,12 +70,12 @@ test("initHttpPool installs a global Agent and returns it", () => {
 });
 ```
 
-- [ ] **Step 3: Run test to verify it fails**
+- [x] **Step 3: Run test to verify it fails**
 
 Run: `node --test tests/http-pool.test.js`
 Expected: FAIL with `Cannot find module '../lib/http-pool'`
 
-- [ ] **Step 4: Write minimal implementation**
+- [x] **Step 4: Write minimal implementation**
 
 Create `lib/http-pool.js`:
 
@@ -106,12 +106,12 @@ function initHttpPool() {
 module.exports = { parsePositiveInt, initHttpPool };
 ```
 
-- [ ] **Step 5: Run test to verify it passes**
+- [x] **Step 5: Run test to verify it passes**
 
 Run: `node --test tests/http-pool.test.js`
 Expected: PASS (3 tests)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add package.json package-lock.json tests/http-pool.test.js lib/http-pool.js
@@ -130,7 +130,7 @@ git commit -m "feat: add undici/compression deps and global HTTP connection pool
 - Consumes: `compression` package
 - Produces: gzip compression for JSON responses > 1KB; SSE responses remain uncompressed.
 
-- [ ] **Step 1: Add compression middleware import**
+- [x] **Step 1: Add compression middleware import**
 
 In `server.js`, after the existing `require("express")` line (line 7), add:
 
@@ -138,7 +138,7 @@ In `server.js`, after the existing `require("express")` line (line 7), add:
 const compression = require("compression");
 ```
 
-- [ ] **Step 2: Register middleware before routes**
+- [x] **Step 2: Register middleware before routes**
 
 After `app.use(dynamicJsonBodyParser);` (line 70), add:
 
@@ -163,11 +163,11 @@ app.use(dynamicJsonBodyParser);
 app.use(requestLoggerMiddleware);
 ```
 
-- [ ] **Step 3: Verify SSE streaming is NOT compressed**
+- [x] **Step 3: Verify SSE streaming is NOT compressed**
 
 Reasoning (no code change needed beyond Step 2): the custom `filter` explicitly returns `false` for `text/event-stream`, so `handleStreamingChatCompletion` output is never gzip'd regardless of its `Cache-Control` header. This is defense-in-depth on top of the existing `Cache-Control: no-cache, no-transform` (server.js:814).
 
-- [ ] **Step 4: Smoke-test locally**
+- [x] **Step 4: Smoke-test locally**
 
 Run: `node server.js` in one terminal; then:
 
@@ -179,12 +179,12 @@ $r.Headers["Content-Encoding"]
 
 Expected: `200` and `Content-Encoding: gzip`. Then verify a streaming request still has no `content-encoding` header.
 
-- [ ] **Step 5: Run full test suite**
+- [x] **Step 5: Run full test suite**
 
 Run: `node --test tests/*.test.js`
 Expected: 69 pass, 0 fail
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add server.js
@@ -198,13 +198,13 @@ git commit -m "perf: enable gzip compression for large JSON responses"
 **Files:**
 - Modify: `lib/runtime-config.js` (`_buildBaseRawConfig` ~line 142, `normalizeConfig` ~line 222)
 - Modify: `.env.example`
-- Test: `tests/config-blacklist.test.js` pattern â€” add a small assertion file OR extend runtime config test if exists.
+- Test: `tests/config-blacklist.test.js` pattern â€?add a small assertion file OR extend runtime config test if exists.
 
 **Interfaces:**
 - Consumes: `process.env.LOG_SLOW_THRESHOLD_MS`
 - Produces: `config.logSlowThresholdMs` (number, default `0` = log everything) available via `getConfig()`.
 
-- [ ] **Step 1: Add env mapping to base raw config**
+- [x] **Step 1: Add env mapping to base raw config**
 
 In `lib/runtime-config.js` `_buildBaseRawConfig` (after line 158 `port: process.env.PORT,`), add:
 
@@ -212,7 +212,7 @@ In `lib/runtime-config.js` `_buildBaseRawConfig` (after line 158 `port: process.
 logSlowThresholdMs: process.env.LOG_SLOW_THRESHOLD_MS,
 ```
 
-- [ ] **Step 2: Add normalization**
+- [x] **Step 2: Add normalization**
 
 In `normalizeConfig` (after the `port:` entry), add:
 
@@ -220,7 +220,7 @@ In `normalizeConfig` (after the `port:` entry), add:
 logSlowThresholdMs: parseNumber(source.logSlowThresholdMs ?? source.LOG_SLOW_THRESHOLD_MS, 0),
 ```
 
-- [ ] **Step 3: Add to `.env.example`**
+- [x] **Step 3: Add to `.env.example`**
 
 Add below `PORT=7865`:
 
@@ -229,7 +229,7 @@ Add below `PORT=7865`:
 LOG_SLOW_THRESHOLD_MS=0
 ```
 
-- [ ] **Step 4: Write the test**
+- [x] **Step 4: Write the test**
 
 Create `tests/log-threshold.test.js`:
 
@@ -268,17 +268,17 @@ test("logSlowThresholdMs parses positive env value", () => {
 });
 ```
 
-- [ ] **Step 5: Run tests to verify**
+- [x] **Step 5: Run tests to verify**
 
 Run: `node --test tests/log-threshold.test.js`
 Expected: PASS (2 tests)
 
-- [ ] **Step 6: Run full suite**
+- [x] **Step 6: Run full suite**
 
 Run: `node --test tests/*.test.js`
 Expected: 71 pass, 0 fail
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add lib/runtime-config.js .env.example tests/log-threshold.test.js
@@ -297,11 +297,11 @@ git commit -m "feat: add LOG_SLOW_THRESHOLD_MS env for request log throttling"
 - Consumes: `getConfig().logSlowThresholdMs`
 - Produces: same `logger.info("HTTP request", ...)` for all requests when threshold is 0; only slow/error requests when threshold > 0.
 
-- [ ] **Step 1: Read current middleware**
+- [x] **Step 1: Read current middleware**
 
 Read `server.js` lines 1465-1481 to confirm the exact block.
 
-- [ ] **Step 2: Modify middleware**
+- [x] **Step 2: Modify middleware**
 
 Replace the `res.on("finish", ...)` handler body with:
 
@@ -331,12 +331,12 @@ function requestLoggerMiddleware(req, res, next) {
 }
 ```
 
-- [ ] **Step 3: Run full test suite**
+- [x] **Step 3: Run full test suite**
 
 Run: `node --test tests/*.test.js`
 Expected: all pass
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add server.js
@@ -355,7 +355,7 @@ git commit -m "perf: throttle request logging via LOG_SLOW_THRESHOLD_MS"
 - Consumes: `getClient()`, `fetchAggregatedModels`, `configStore`
 - Produces: warm `channel-manager` model cache and `ai8-client` template cache at startup and after config saves.
 
-- [ ] **Step 5.1: Add helper function**
+- [x] **Step 5.1: Add helper function**
 
 Add near `getClient` (before `invalidateClient`, ~line 1669):
 
@@ -383,11 +383,11 @@ function prewarmCaches() {
 }
 ```
 
-- [ ] **Step 5.2: Call at startup**
+- [x] **Step 5.2: Call at startup**
 
 In the `app.listen(port, "0.0.0.0", () => { ... })` callback (line 783), add `prewarmCaches();` before the closing brace.
 
-- [ ] **Step 5.3: Call after config save**
+- [x] **Step 5.3: Call after config save**
 
 In `app.put("/admin/api/config", ...)` handler, after `invalidateClient();` (line 117), add:
 
@@ -395,12 +395,12 @@ In `app.put("/admin/api/config", ...)` handler, after `invalidateClient();` (lin
 setImmediate(prewarmCaches);
 ```
 
-- [ ] **Step 5.4: Run full test suite**
+- [x] **Step 5.4: Run full test suite**
 
 Run: `node --test tests/*.test.js`
 Expected: all pass
 
-- [ ] **Step 5.5: Commit**
+- [x] **Step 5.5: Commit**
 
 ```bash
 git add server.js
@@ -419,7 +419,7 @@ git commit -m "perf: prewarm model and template caches at startup and after conf
 - Consumes: existing `_findEventBoundary`, `_readEventData`, `_splitThinkingChunk`
 - Produces: identical SSE parsing semantics with an index cursor and periodic trim; `finalRecord`/`taskId` output unchanged.
 
-- [ ] **Step 6.1: Write the failing test**
+- [x] **Step 6.1: Write the failing test**
 
 Append to `tests/ai8-client.test.js`:
 
@@ -477,9 +477,9 @@ test("AI8 SSE parser consumes a long stream split across many chunks", async () 
 });
 ```
 
-NOTE: this test fails on the OLD string-concat implementation only if the refactor changes semantics; its real job is to pin the output contract (all 2000 tokens in order, even with 3-byte chunks forcing many partial-boundary reads). Run it BEFORE the refactor to confirm it passes on current code, then again after the refactor â€” both must pass identically.
+NOTE: this test fails on the OLD string-concat implementation only if the refactor changes semantics; its real job is to pin the output contract (all 2000 tokens in order, even with 3-byte chunks forcing many partial-boundary reads). Run it BEFORE the refactor to confirm it passes on current code, then again after the refactor â€?both must pass identically.
 
-- [ ] **Step 6.2: Refactor the streaming loop**
+- [x] **Step 6.2: Refactor the streaming loop**
 
 In `lib/ai8-client.js`, replace the `for await (const chunk of response.body) { buffer += ...; ... }` block (lines 262-327) with:
 
@@ -505,25 +505,25 @@ const appendAndParse = () => {
 };
 ```
 
-- [ ] **Step 6.3: Update `_findEventBoundary` to accept an offset**
+- [x] **Step 6.3: Update `_findEventBoundary` to accept an offset**
 
 Change signature to `_findEventBoundary(buffer, fromIndex = 0)` and use `buffer.indexOf("\n\n", fromIndex)` / `buffer.indexOf("\r\n\r\n", fromIndex)`.
 
-- [ ] **Step 6.4: Periodic trim**
+- [x] **Step 6.4: Periodic trim**
 
 After processing each network chunk, if `readOffset > 8192`, do `buffer = buffer.slice(readOffset); readOffset = 0;`.
 
-- [ ] **Step 6.5: Run AI8 tests**
+- [x] **Step 6.5: Run AI8 tests**
 
 Run: `node --test tests/ai8-client.test.js`
 Expected: all pass (no behavior change)
 
-- [ ] **Step 6.6: Run full suite**
+- [x] **Step 6.6: Run full suite**
 
 Run: `node --test tests/*.test.js`
 Expected: all pass
 
-- [ ] **Step 6.7: Commit**
+- [x] **Step 6.7: Commit**
 
 ```bash
 git add lib/ai8-client.js tests/ai8-client.test.js
@@ -542,7 +542,7 @@ git commit -m "perf: use index-cursor buffering in AI8 SSE parser"
 - Consumes: existing `processLine` closure
 - Produces: identical newline-delimited JSON parsing; `chatId`, `finalRecord`, `groupUpdated` unchanged.
 
-- [ ] **Step 7.1: Write the equivalence test (pin output contract)**
+- [x] **Step 7.1: Write the equivalence test (pin output contract)**
 
 Append to `tests/gptall-client.test.js`:
 
@@ -622,7 +622,7 @@ test("gpt-all newline parser consumes a long stream split across many chunks", a
 
 Run BEFORE the refactor to confirm it passes on current code; it must pass identically after. Then proceed.
 
-- [ ] **Step 7.2: Refactor the newline loop**
+- [x] **Step 7.2: Refactor the newline loop**
 
 In `lib/gptall-client.js`, replace lines 212-226 with:
 
@@ -651,21 +651,21 @@ for await (const chunk of response.body) {
 }
 ```
 
-- [ ] **Step 7.2: Fix the trailing-buffer check**
+- [x] **Step 7.2: Fix the trailing-buffer check**
 
 After the loop, replace `if (buffer.trim()) {` with `if (buffer.slice(readOffset).trim()) {` and parse the remainder accordingly.
 
-- [ ] **Step 7.3: Run gptall tests**
+- [x] **Step 7.3: Run gptall tests**
 
 Run: `node --test tests/gptall-client.test.js`
 Expected: all pass
 
-- [ ] **Step 7.4: Run full suite**
+- [x] **Step 7.4: Run full suite**
 
 Run: `node --test tests/*.test.js`
 Expected: all pass
 
-- [ ] **Step 7.5: Commit**
+- [x] **Step 7.5: Commit**
 
 ```bash
 git add lib/gptall-client.js
@@ -684,7 +684,7 @@ git commit -m "perf: use index-cursor buffering in gpt-all SSE parser"
 - Consumes: `res.socket`
 - Produces: `socket.setNoDelay(true)` on streaming responses for smoother token delivery.
 
-- [ ] **Step 1: Add setNoDelay**
+- [x] **Step 1: Add setNoDelay**
 
 In `handleStreamingChatCompletion`, after `res.setHeader("Connection", "keep-alive");` (line 815), add:
 
@@ -694,12 +694,12 @@ if (typeof res.socket?.setNoDelay === "function") {
 }
 ```
 
-- [ ] **Step 2: Run full test suite**
+- [x] **Step 2: Run full test suite**
 
 Run: `node --test tests/*.test.js`
 Expected: all pass
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add server.js
@@ -711,27 +711,27 @@ git commit -m "perf: enable TCP_NODELAY for streaming responses"
 ### Task 9: Final verification and deployment notes
 
 **Files:**
-- Modify: `docs/superpowers/specs/2026-08-06-performance-optimization-design.md` (mark complete) â€” optional
+- Modify: `docs/superpowers/specs/2026-08-06-performance-optimization-design.md` (mark complete) â€?optional
 - Test: full suite
 
-- [ ] **Step 1: Run the entire test suite**
+- [x] **Step 1: Run the entire test suite**
 
 Run: `node --test tests/*.test.js`
 Expected: all pass (69 original + http-pool + log-threshold tests)
 
-- [ ] **Step 2: Verify server boots**
+- [x] **Step 2: Verify server boots**
 
 Run: `node server.js` (with a valid config), then check `/health` returns 200 and the model cache is pre-warmed (first `/v1/models` returns instantly).
 
-- [ ] **Step 3: Verify compression on live behavior**
+- [x] **Step 3: Verify compression on live behavior**
 
-Run: `Invoke-WebRequest http://localhost:7865/v1/models` with `Accept-Encoding: gzip` â€” expect `Content-Encoding: gzip`. Confirm streaming chat response has no `content-encoding`.
+Run: `Invoke-WebRequest http://localhost:7865/v1/models` with `Accept-Encoding: gzip` â€?expect `Content-Encoding: gzip`. Confirm streaming chat response has no `content-encoding`.
 
-- [ ] **Step 4: Verify log throttling**
+- [x] **Step 4: Verify log throttling**
 
 With `LOG_SLOW_THRESHOLD_MS=1000`, make fast requests and confirm no `HTTP request` logs; make a slow request and confirm it is logged.
 
-- [ ] **Step 5: Push to upstream and note deployment**
+- [x] **Step 5: Push to upstream and note deployment**
 
 ```bash
 git push upstream main
@@ -743,7 +743,7 @@ Deployment on server:
 cd ~/AI8-2 && git pull && cd AI8-Hub && npm install && pm2 restart ai8-hub
 ```
 
-- [ ] **Step 6: Commit any final doc tweaks**
+- [x] **Step 6: Commit any final doc tweaks**
 
 ```bash
 git add -A
@@ -755,14 +755,6 @@ git commit -m "chore: finalize performance optimization verification"
 ## Self-Review
 
 **Spec coverage:**
-- Spec Â§1 (connection pool) â†’ Task 1 âœ“
-- Spec Â§2 (compression) â†’ Task 2 âœ“
-- Spec Â§3 (cache prewarm) â†’ Task 5 âœ“
-- Spec Â§4 (SSE parser) â†’ Tasks 6, 7 âœ“
-- Spec Â§5 (NODELAY) â†’ Task 8 âœ“
-- Spec Â§6 (log throttling) â†’ Tasks 3, 4 âœ“
-- Global constraint "all tests green" â†’ Task 2/4/6/7/9 checkpoints âœ“
-
-**Placeholder scan:** No TBD/TODO; every step has concrete code or commands. Step 6.1's NOTE explains the testing limitation and the resolution path. âœ“
-
-**Type consistency:** `initHttpPool` returns Agent and is exported once; `logSlowThresholdMs` spelled identically in Task 3 (config), Task 4 (`getConfig().logSlowThresholdMs`), and tests; `readOffset` used consistently within each parser task. âœ“
+- Spec Â§1 (connection pool) â†?Task 1 âœ?- Spec Â§2 (compression) â†?Task 2 âœ?- Spec Â§3 (cache prewarm) â†?Task 5 âœ?- Spec Â§4 (SSE parser) â†?Tasks 6, 7 âœ?- Spec Â§5 (NODELAY) â†?Task 8 âœ?- Spec Â§6 (log throttling) â†?Tasks 3, 4 âœ?- Global constraint "all tests green" â†?Task 2/4/6/7/9 checkpoints âœ?
+**Placeholder scan:** No TBD/TODO; every step has concrete code or commands. Step 6.1's NOTE explains the testing limitation and the resolution path. âœ?
+**Type consistency:** `initHttpPool` returns Agent and is exported once; `logSlowThresholdMs` spelled identically in Task 3 (config), Task 4 (`getConfig().logSlowThresholdMs`), and tests; `readOffset` used consistently within each parser task. âœ?
