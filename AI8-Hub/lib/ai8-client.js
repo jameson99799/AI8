@@ -259,17 +259,19 @@ class AI8Client {
             text: "",
         };
 
+        let readOffset = 0;
+
         for await (const chunk of response.body) {
             buffer += decoder.decode(chunk, { stream: true });
 
             for (;;) {
-                const boundary = this._findEventBoundary(buffer);
+                const boundary = this._findEventBoundary(buffer, readOffset);
                 if (!boundary) {
                     break;
                 }
 
-                const rawEvent = buffer.slice(0, boundary.index);
-                buffer = buffer.slice(boundary.index + boundary.length);
+                const rawEvent = buffer.slice(readOffset, boundary.index);
+                readOffset = boundary.index + boundary.length;
 
                 const data = this._readEventData(rawEvent);
                 if (!data) {
@@ -323,6 +325,11 @@ class AI8Client {
                         handlers.onObject(finalRecord, parsed);
                     }
                 }
+            }
+
+            if (readOffset > 8192) {
+                buffer = buffer.slice(readOffset);
+                readOffset = 0;
             }
         }
 
@@ -558,11 +565,11 @@ class AI8Client {
         return error;
     }
 
-    _findEventBoundary(buffer) {
+    _findEventBoundary(buffer, fromIndex = 0) {
         // Prefer indexOf over a full-buffer regex to avoid O(n^2) rescanning on
         // long streams. Find the earliest of \n\n and \r\n\r\n.
-        const lfIndex = buffer.indexOf("\n\n");
-        const crlfIndex = buffer.indexOf("\r\n\r\n");
+        const lfIndex = buffer.indexOf("\n\n", fromIndex);
+        const crlfIndex = buffer.indexOf("\r\n\r\n", fromIndex);
 
         if (lfIndex === -1) {
             if (crlfIndex === -1) {

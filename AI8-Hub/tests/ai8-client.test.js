@@ -155,3 +155,55 @@ test("_normalizeThinkingRecord keeps streamed reasoning when record has no aiTex
     assert.equal(normalized.aiText, "纯回答");
     assert.equal(normalized.reasoning_content, "已流式的推理");
 });
+
+test("AI8 SSE parser consumes a long stream split across many chunks", async () => {
+    const client = createClient();
+
+    const events = [];
+    for (let i = 0; i < 2000; i += 1) {
+        events.push(`data: {"code":0,"data":"tok${i}"}\n\n`);
+    }
+    events.push("data: [DONE]\n\n");
+    const bodyText = events.join("");
+
+    const fakeHeaders = {
+        get(name) {
+            const lower = String(name).toLowerCase();
+            if (lower === "content-type") return "text/event-stream";
+            if (lower === "x-chat-task-id") return null;
+            return null;
+        },
+    };
+    const fakeResponse = {
+        ok: true,
+        status: 200,
+        headers: fakeHeaders,
+        body: new ReadableStream({
+            start(controller) {
+                const bytes = new TextEncoder().encode(bodyText);
+                for (let i = 0; i < bytes.length; i += 3) {
+                    controller.enqueue(bytes.subarray(i, i + 3));
+                }
+                controller.close();
+            },
+        }),
+    };
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => fakeResponse;
+    try {
+        const tokens = [];
+        await client.streamChatCompletion(
+            { text: "hi", sessionId: 1 },
+            {
+                onText(chunk) { tokens.push(chunk); },
+                onDone() {},
+            }
+        );
+        assert.equal(tokens.length, 2000);
+        assert.equal(tokens[0], "tok0");
+        assert.equal(tokens[1999], "tok1999");
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
+});
