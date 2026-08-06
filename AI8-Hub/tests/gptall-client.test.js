@@ -419,6 +419,78 @@ test("deleteGroupAfterResponse=false keeps the group", async () => {
     assert.equal(capture.deleted, undefined);
 });
 
+test("gpt-all newline parser consumes a long stream split across many chunks", async () => {
+    const GptAllClient = require("../lib/gptall-client");
+    const client = new GptAllClient({
+        authToken: "tok",
+        baseUrl: "https://gpt-all.chat/api",
+        fingerprint: "1",
+        defaultModel: "test-model",
+        deleteGroupAfterResponse: false,
+    });
+
+    const lines = [];
+    for (let i = 0; i < 1500; i += 1) {
+        lines.push(JSON.stringify({ chatId: 7, text: `line${i}` }));
+    }
+    const bodyText = lines.join("\n") + "\n";
+
+    const jsonHeaders = { get(name) { return String(name).toLowerCase() === "content-type" ? "application/json" : null; } };
+    const streamHeaders = { get(name) { return String(name).toLowerCase() === "content-type" ? "text/event-stream" : null; } };
+
+    function jsonResponse(payload) {
+        return {
+            ok: true,
+            status: 200,
+            headers: jsonHeaders,
+            async json() { return payload; },
+            async text() { return JSON.stringify(payload); },
+        };
+    }
+
+    const streamResponse = {
+        ok: true,
+        status: 200,
+        headers: streamHeaders,
+        body: new ReadableStream({
+            start(controller) {
+                const bytes = new TextEncoder().encode(bodyText);
+                for (let i = 0; i < bytes.length; i += 3) {
+                    controller.enqueue(bytes.subarray(i, i + 3));
+                }
+                controller.close();
+            },
+        }),
+    };
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (url) => {
+        const path = String(url.pathname || url);
+        if (path.includes("/models/list")) {
+            return jsonResponse({ code: 0, data: { modelMaps: { g: [{ model: "test-model", modelName: "test-model", modelType: 1 }] } } });
+        }
+        if (path.includes("/group/create")) {
+            return jsonResponse({ code: 0, data: { id: 1 } });
+        }
+        if (path.includes("/group/update")) {
+            return jsonResponse({ code: 0, data: {} });
+        }
+        return streamResponse;
+    };
+    try {
+        const texts = [];
+        await client.streamChatCompletion(
+            { text: "hi", model: "test-model" },
+            { onText(chunk) { texts.push(chunk); }, onDone() {} }
+        );
+        assert.equal(texts.length, 1500);
+        assert.equal(texts[0], "line0");
+        assert.equal(texts[1499], "line1499");
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
+});
+
 function ReadableStreamFromLines(lines) {
     const encoder = new TextEncoder();
     const chunks = lines.map(line => encoder.encode(`${line}\n`));

@@ -209,25 +209,32 @@ class GptAllClient {
                 }
             };
 
+            let readOffset = 0;
+
             for await (const chunk of response.body) {
                 buffer += decoder.decode(chunk, { stream: true });
 
                 for (;;) {
-                    const index = buffer.indexOf("\n");
+                    const index = buffer.indexOf("\n", readOffset);
                     if (index === -1) {
                         break;
                     }
                     const newlineLength = index > 0 && buffer[index - 1] === "\r" ? 2 : 1;
-                    const rawLine = buffer.slice(0, index + (newlineLength === 2 ? -1 : 0));
-                    buffer = buffer.slice(index + newlineLength);
+                    const rawLine = buffer.slice(readOffset, index + (newlineLength === 2 ? -1 : 0));
+                    readOffset = index + newlineLength;
                     lineNumber += 1;
                     processLine(rawLine);
                 }
+
+                if (readOffset > 8192) {
+                    buffer = buffer.slice(readOffset);
+                    readOffset = 0;
+                }
             }
 
-            if (buffer.trim()) {
+            if (buffer.slice(readOffset).trim()) {
                 lineNumber += 1;
-                processLine(buffer.trim());
+                processLine(buffer.slice(readOffset).trim());
             }
 
             if (typeof handlers.onDone === "function") {
