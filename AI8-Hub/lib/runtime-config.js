@@ -98,6 +98,7 @@ class RuntimeConfigStore {
             ai8DefaultModel: this.runtimeConfig.ai8DefaultModel,
             ai8DefaultThinking: this.runtimeConfig.ai8DefaultThinking,
             ai8RequestTimeoutMs: this.runtimeConfig.ai8RequestTimeoutMs,
+            ai8MinOutputTokens: this.runtimeConfig.ai8MinOutputTokens,
             ai8DeleteSessionAfterResponse: this.runtimeConfig.ai8DeleteSessionAfterResponse,
             ai8ReuseSessionInjectSystemPrompt: this.runtimeConfig.ai8ReuseSessionInjectSystemPrompt,
             ai8UseSharedSession: this.runtimeConfig.ai8UseSharedSession,

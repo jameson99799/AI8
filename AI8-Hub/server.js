@@ -150,9 +150,16 @@ app.put("/admin/api/channels", requireAdminAuth, (req, res) => {
 });
 
 app.get("/admin/api/export", requireAdminAuth, (req, res) => {
-    // Return the raw config object
+    // Merge the raw override file with the complete editable config so that
+    // every channel setting (including gpt-all and any future channels) is
+    // exported regardless of whether it originated from env vars or config.json.
     const raw = configStore._readOverrideFile();
-    res.json(raw);
+    const editable = configStore.getEditableConfig();
+    res.json({
+        ...raw,
+        ...editable,
+        updatedAt: raw.updatedAt || new Date().toISOString(),
+    });
 });
 
 app.post("/admin/api/import", requireAdminAuth, (req, res) => {
