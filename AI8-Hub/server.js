@@ -32,6 +32,7 @@ const {
 } = require("./lib/openai-format");
 const {
     anthropicToOpenAiRequest,
+    estimateInputTokens,
     openAiToAnthropicChunk,
     openAiToAnthropicResponse,
 } = require("./lib/anthropic-format");
@@ -307,7 +308,7 @@ app.get("/v1/models", asyncHandler(async (req, res) => {
 }));
 
 app.post("/v1/messages/count_tokens", (req, res) => {
-    res.json({ input_tokens: 0 });
+    res.json({ input_tokens: estimateInputTokens(req.body) });
 });
 
 app.post("/v1/messages", asyncHandler(async (req, res) => {
@@ -1546,6 +1547,7 @@ function buildRuntimeSnapshot(req) {
             started_at: STARTED_AT.toISOString(),
             uptime_seconds: Math.round(process.uptime()),
             version: packageJson.version,
+            node_version: process.version,
         },
         auth: {
             admin_mode: configStore.getAdminAuthMode(),

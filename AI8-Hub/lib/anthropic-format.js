@@ -2,6 +2,43 @@
 
 const { randomId } = require("./openai-format");
 
+function collectTextFromContent(content, output) {
+    if (typeof content === "string") {
+        output.push(content);
+        return;
+    }
+    if (Array.isArray(content)) {
+        for (const part of content) {
+            if (typeof part === "string") {
+                output.push(part);
+            } else if (part && typeof part.text === "string") {
+                output.push(part.text);
+            }
+        }
+    }
+}
+
+function estimateInputTokens(body = {}) {
+    const textParts = [];
+    collectTextFromContent(body.system, textParts);
+    for (const message of Array.isArray(body.messages) ? body.messages : []) {
+        if (message && typeof message.content !== "undefined") {
+            collectTextFromContent(message.content, textParts);
+        }
+    }
+    if (typeof body.tools !== "undefined") {
+        try {
+            textParts.push(JSON.stringify(body.tools));
+        } catch (e) {
+            // Ignore non-serializable tools
+        }
+    }
+    const fullText = textParts.join("\n");
+    const cjkCount = (fullText.match(/[\u3000-\u9fff\uac00-\ud7af\uf900-\ufaff\u3040-\u30ff]/g) || []).length;
+    const otherCount = fullText.length - cjkCount;
+    return Math.max(1, Math.ceil(cjkCount + otherCount / 4));
+}
+
 function anthropicToOpenAiRequest(body) {
     const messages = [];
 
@@ -354,6 +391,7 @@ function openAiToAnthropicResponse(openaiRes) {
 
 module.exports = {
     anthropicToOpenAiRequest,
+    estimateInputTokens,
     openAiToAnthropicChunk,
     openAiToAnthropicResponse
 };

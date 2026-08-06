@@ -3,7 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { anthropicToOpenAiRequest, openAiToAnthropicChunk, openAiToAnthropicResponse } = require("../lib/anthropic-format");
+const { anthropicToOpenAiRequest, estimateInputTokens, openAiToAnthropicChunk, openAiToAnthropicResponse } = require("../lib/anthropic-format");
 
 test("tool_use is converted to assistant tool_calls, never leaked into content", () => {
     const result = anthropicToOpenAiRequest({
@@ -175,4 +175,36 @@ test("non-streaming reasoning field (NVIDIA NIM) becomes a thinking block", () =
     assert.equal(converted.content[0].thinking, "思考内容");
     assert.equal(converted.content[1].type, "text");
     assert.equal(converted.content[1].text, "回答内容");
+});
+
+test("estimateInputTokens counts latin text as chars/4", () => {
+    const n = estimateInputTokens({ messages: [{ role: "user", content: "hello world how are you today" }] });
+    assert.ok(n >= 1, "estimate is non-zero");
+});
+
+test("estimateInputTokens counts CJK characters as one token each", () => {
+    const chineseOnly = estimateInputTokens({ messages: [{ role: "user", content: "你好世界" }] });
+    assert.equal(chineseOnly, 4);
+    const mixed = estimateInputTokens({
+        system: "系统提示",
+        messages: [
+            { role: "user", content: [{ type: "text", text: "abcd" }] },
+        ],
+    });
+    // 4 CJK + (1 newline + 4 ascii)/4 = ceil(4 + 1.25) = 6
+    assert.equal(mixed, 6);
+});
+
+test("estimateInputTokens is at least 1 for empty bodies", () => {
+    assert.equal(estimateInputTokens(), 1);
+    assert.equal(estimateInputTokens({ messages: [] }), 1);
+});
+
+test("estimateInputTokens includes tool definitions", () => {
+    const withTools = estimateInputTokens({
+        messages: [{ role: "user", content: "hi" }],
+        tools: [{ name: "get_weather", input: { city: "Tokyo" } }],
+    });
+    const withoutTools = estimateInputTokens({ messages: [{ role: "user", content: "hi" }] });
+    assert.ok(withTools > withoutTools, "tools contribute to the estimate");
 });

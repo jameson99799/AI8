@@ -23,6 +23,12 @@ let modelCache = {
     ttl: 1000 * 60 * 5 // 5 minutes cache
 };
 
+let resolutionCache = new Map();
+
+function clearResolutionCache() {
+    resolutionCache = new Map();
+}
+
 async function fetchAggregatedModels(client, config, forceRefresh, logger, forAdmin = false) {
     if (!forceRefresh && modelCache.models.length > 0 && Date.now() - modelCache.timestamp < modelCache.ttl) {
         return filterCachedModels(modelCache.models, config, forAdmin);
@@ -145,6 +151,8 @@ async function fetchAggregatedModels(client, config, forceRefresh, logger, forAd
         ttl: modelCache.ttl
     };
 
+    clearResolutionCache();
+
     return filterCachedModels(allModels, config, forAdmin);
 }
 
@@ -192,6 +200,17 @@ function isBlacklisted(requestModel, config, targetChannel) {
 }
 
 async function resolveTargetChannel(requestModel, config, client, logger) {
+    const cached = resolutionCache.get(requestModel);
+    if (cached && Date.now() - cached.timestamp < modelCache.ttl) {
+        return cached.result;
+    }
+
+    const result = await resolveTargetChannelUncached(requestModel, config, client, logger);
+    resolutionCache.set(requestModel, { result, timestamp: Date.now() });
+    return result;
+}
+
+async function resolveTargetChannelUncached(requestModel, config, client, logger) {
     let actualModel = requestModel;
     let targetChannel = null;
     let toolSupported = null;
@@ -344,4 +363,4 @@ async function proxyToCustomChannel(req, res, targetChannel, actualModel, body, 
     }
 }
 
-module.exports = { buildGptAllClient, fetchAggregatedModels, proxyToCustomChannel, resolveTargetChannel, isBlacklisted, filterCachedModels };
+module.exports = { buildGptAllClient, clearResolutionCache, fetchAggregatedModels, proxyToCustomChannel, resolveTargetChannel, isBlacklisted, filterCachedModels };

@@ -4,6 +4,9 @@
     "private": true,
     "description": "OpenAI-compatible adapter for ai8.rcouyi.com",
     "main": "server.js",
+    "engines": {
+        "node": ">=20.3.0"
+    },
     "scripts": {
         "start": "node server.js",
         "test": "node --test tests/*.test.js"

@@ -3,7 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert");
 
-const { filterCachedModels, isBlacklisted } = require("../lib/channel-manager");
+const { clearResolutionCache, filterCachedModels, isBlacklisted, resolveTargetChannel } = require("../lib/channel-manager");
 
 function makeModels() {
     return [
@@ -109,4 +109,29 @@ test("isBlacklisted is case-agnostic to empty blacklists", () => {
     assert.equal(isBlacklisted("anything", config, null), false);
     const channel = { name: "custom1" };
     assert.equal(isBlacklisted("anything", config, channel), false);
+});
+
+test("resolveTargetChannel caches results across repeated calls", async () => {
+    clearResolutionCache();
+    let fetchCount = 0;
+    const fakeClient = {
+        fetchModels: async () => {
+            fetchCount += 1;
+            return [{ value: "openai_chat::gpt-4.1-mini【AI8直连】" }];
+        },
+    };
+    const config = {
+        ai8Enabled: true,
+        ai8BlacklistedModels: [],
+        ai8AllowedModels: [],
+        blacklistedModels: [],
+        gptallEnabled: false,
+        gptallBlacklistedModels: [],
+        customChannels: [],
+    };
+
+    const first = await resolveTargetChannel("openai_chat::gpt-4.1-mini", config, fakeClient);
+    const second = await resolveTargetChannel("openai_chat::gpt-4.1-mini", config, fakeClient);
+    assert.deepEqual(first, second);
+    assert.equal(fetchCount, 1, "second call should hit the resolution cache");
 });
