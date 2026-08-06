@@ -33,6 +33,7 @@ const elements = {
     ai8AuthToken: document.getElementById("ai8AuthToken"),
     ai8DefaultModel: document.getElementById("ai8DefaultModel"),
     ai8RequestTimeoutMs: document.getElementById("ai8RequestTimeoutMs"),
+    ai8DeleteSessionAfterResponse: document.getElementById("ai8DeleteSessionAfterResponse"),
     apiKeys: document.getElementById("apiKeys"),
     gptallEnabled: document.getElementById("gptallEnabled"),
     gptallBaseUrl: document.getElementById("gptallBaseUrl"),
@@ -267,6 +268,7 @@ async function saveGlobalConfig() {
             ai8BaseUrl: elements.ai8BaseUrl.value.trim(),
             ai8DefaultModel: elements.ai8DefaultModel.value.trim(),
             ai8RequestTimeoutMs: toNumberString(elements.ai8RequestTimeoutMs.value),
+            ai8DeleteSessionAfterResponse: elements.ai8DeleteSessionAfterResponse.value === "true",
             apiKeys: elements.apiKeys.value.trim(),
             gptallEnabled: elements.gptallEnabled.value === "true",
             gptallBaseUrl: elements.gptallBaseUrl.value.trim(),
@@ -992,6 +994,7 @@ function renderConfig(config) {
     elements.ai8AuthToken.value = config.ai8AuthToken || "";
     elements.ai8DefaultModel.value = config.ai8DefaultModel || "";
     if (elements.ai8RequestTimeoutMs) elements.ai8RequestTimeoutMs.value = config.ai8RequestTimeoutMs || "";
+    if (elements.ai8DeleteSessionAfterResponse) elements.ai8DeleteSessionAfterResponse.value = config.ai8DeleteSessionAfterResponse === true ? "true" : "false";
     elements.apiKeys.value = config.apiKeys || "";
     if (elements.gptallEnabled) elements.gptallEnabled.value = config.gptallEnabled === true ? "true" : "false";
     if (elements.gptallBaseUrl) elements.gptallBaseUrl.value = config.gptallBaseUrl || "";
