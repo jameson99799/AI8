@@ -333,7 +333,7 @@ app.post("/v1/messages", asyncHandler(async (req, res) => {
             if (res.statusCode !== 200) {
                 return originalWrite(chunk);
             }
-            const chunkStr = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+            const chunkStr = typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
             buf += chunkStr;
             const lines = buf.split(/\r?\n\r?\n/);
             buf = lines.pop(); // keep last incomplete
@@ -375,7 +375,7 @@ app.post("/v1/messages", asyncHandler(async (req, res) => {
                 return originalEnd(chunk, encoding, callback);
             }
             if (chunk && typeof chunk !== "function") {
-                const chunkStr = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+                const chunkStr = typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
                 buf += chunkStr;
             }
             if (buf.trim().length > 0) {

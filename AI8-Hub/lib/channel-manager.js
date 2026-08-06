@@ -314,7 +314,7 @@ async function proxyToCustomChannel(req, res, targetChannel, actualModel, body, 
                     const { done, value } = await reader.read();
                     if (done) break;
                     if (value) {
-                        res.write(value);
+                        res.write(Buffer.from(value));
                     }
                 }
             } finally {
